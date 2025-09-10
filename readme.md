@@ -1,4 +1,4 @@
-```txt
+```
                                        pm
 pm is a package manager. It solves the problem of handle packages from
 external repositories.
@@ -19,6 +19,4 @@ SOURCE CODE
 
 Source code is avaliable for free. You can download it from github:
 https://github.com/hugoocoto/pm
-
 ```
-
