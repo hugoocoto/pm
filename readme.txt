@@ -1,6 +1,7 @@
                                        pm
 pm package manager.
 
+
 DESCRIPTION
         pm is a package manager. It solves the problem of handle packages from
         external repositories. Configuration is done using pm.config in the same
@@ -8,19 +9,15 @@ DESCRIPTION
         is applied at compilation so pm should be rebuild every time config file
         changes.
 
-AUTOR
-        Hugo Coto Flórez (me@hugocoto.com). Github profile:
-        https://github.com/hugoocoto
-
-LICENSE
-        GNU Public License
 
 STANDARDS
         c99 for unix like systems
 
+
 SOURCE CODE
         Source code is avaliable for free. You can download it from github:
         https://github.com/hugoocoto/pm
+
 
 EXAMPLES
         'pm.config' that installs the latest version of st and vicel:
@@ -32,6 +29,11 @@ EXAMPLES
                 PAK(.name = "vicel",
                     .git = "https://github.com/hugoocoto/vicel")
 
-BUGS
-TODOS
-        Automatically rebuild on config changes.
+
+AUTOR
+        Hugo Coto Flórez (me@hugocoto.com). Github profile:
+        https://github.com/hugoocoto
+
+LICENSE
+        GNU Public License
+
