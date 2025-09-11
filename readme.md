@@ -1,5 +1,3 @@
-! it does not work yet
-
 ```
                                        pm
 pm is a package manager. It solves the problem of handle packages from
@@ -22,3 +20,9 @@ SOURCE CODE
 Source code is avaliable for free. You can download it from github:
 https://github.com/hugoocoto/pm
 ```
+
+Note that: 
+- Config is in pm.c 
+- Recompilation is needed after changing config
+- No tested. It works on some github repos
+- Recipe must be a single program with no or more arguments
