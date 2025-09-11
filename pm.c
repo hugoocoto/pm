@@ -15,9 +15,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#if _POSIX_C_SOURCE < 200112L
-#define _POSIX_C_SOURCE 200112L // setenv
-#endif
+#define _POSIX_C_SOURCE 2
 
 #include <errno.h>
 #include <stdio.h>
@@ -31,6 +29,7 @@ typedef struct Package {
         char *name;
         char *git;
         char *recipe;
+        char *branch;
 } Package;
 
 struct {
@@ -38,9 +37,10 @@ struct {
         int count;
 } packarr = { 0 };
 
-int pmupdate();       /* Update/install all packages */
-int pmadd(Package p); /* Add a package to package list */
-void pmlist();        /* Print package list */
+void pmupdateall();
+void pmupdate(Package p);
+void pmadd(Package p);
+void pmlist();
 
 static char *bin_path = "/home/hugo/.local/share/pm/bin";
 static char *clone_path = "/home/hugo/.local/share/pm/cache";
@@ -114,19 +114,20 @@ void
 pmlist()
 {
         int i = 0;
+        puts("Installed Packages:");
         for (; i < packarr.count; i++) {
-                printf("[INFO] %s (%s)\n", packarr.packages[i].name, packarr.packages[i].git);
+                printf("  - %s (%s)\n", packarr.packages[i].name, packarr.packages[i].git);
         }
 }
 
-int
+void
 pmadd(Package p)
 {
         packarr.packages = realloc(packarr.packages,
                                    sizeof p * (packarr.count + 1));
         packarr.packages[packarr.count] = p;
         packarr.count++;
-        return 0;
+        return;
 }
 
 int
@@ -152,93 +153,205 @@ is_cloned(Package p)
 }
 
 int
-pminstall(Package p)
+run(char **argv)
 {
         int pid;
+        char **arg = argv;
         int status;
-        char path[127];
 
-        if (is_cloned(p)) {
-                printf("Package %s already installed. Skip update check\n",
-                       p.name);
+        printf("[RUN ] ");
+        do {
+                printf(" %s", *arg);
+        } while ((*++arg));
+        putchar(10);
+
+        switch (pid = fork()) {
+        case -1:
+                perror("fork");
+                exit(1);
+        case 0:
+                execvp(argv[0], argv);
+                perror("execlp");
+                exit(0);
+
+        default:
+                waitpid(pid, &status, 0);
+                return status;
+        }
+}
+
+int
+run_get(const char *cmd, char *out, size_t len)
+{
+        printf("[RUN ] %s\n", cmd);
+        FILE *fp = popen(cmd, "r");
+        if (!fp) return 1;
+
+        if (fgets(out, len, fp) == NULL) {
+                pclose(fp);
                 return 1;
         }
 
-        join(path, clone_path, p.name, '/');
-
-        switch (pid = fork()) {
-        case -1:
-                perror("fork");
-                exit(1);
-        case 0:
-                printf("[RUN]: %s %s %s %s %s\n", "git", "git", "clone", p.git, path);
-                execlp("git", "git", "clone", p.git, path, NULL);
-                perror("execlp");
-                exit(0);
-
-        default:
-                waitpid(pid, &status, 0);
-                if (status != 0) return 1;
-        }
-
-        switch (pid = fork()) {
-        case -1:
-                perror("fork");
-                exit(1);
-        case 0:
-                chdir(path);
-                printf("[RUN]: %s\n", p.recipe);
-                char **recipel = split(p.recipe, ' ');
-                execvp(recipel[0], recipel);
-                perror("execlp");
-                free(recipel);
-                exit(0);
-
-        default:
-                waitpid(pid, &status, 0);
-                if (status != 0) return 1;
-        }
-
-        switch (pid = fork()) {
-        case -1:
-                perror("fork");
-                exit(1);
-        case 0: {
-                char bp[128] = { 0 };
-                char ep[128] = { 0 };
-                join(bp, bin_path, p.name, '/');
-                join(ep, path, p.name, '/');
-
-                printf("[LINK] %s ---> %s\n", ep, bp);
-                if (link(ep, bp)) {
-                        perror("link");
-                }
-                exit(0);
-        }
-
-        default:
-                waitpid(pid, &status, 0);
-                if (status != 0) return 1;
-        }
-
-
+        out[strcspn(out, "\n")] = '\0'; /* trim newline */
+        pclose(fp);
         return 0;
 }
 
 int
-pmupdate()
+chdircloned(Package p)
 {
-        int i = 0;
-        for (; i < packarr.count; i++) {
-                if (is_installed(packarr.packages[i])) {
-                        printf("Package %s already installed. Skip update check\n",
-                               packarr.packages[i].name);
-                        continue;
-                }
-                pminstall(packarr.packages[i]);
+        char path[127];
+        join(path, clone_path, p.name, '/');
+        if (chdir(path)) {
+                perror("chdir");
+                return 1;
         }
         return 0;
 }
+
+int
+need_update(Package p)
+{
+        char local[128];
+        char remote[128];
+        char cmd[128];
+
+        if (chdircloned(p)) return 0;
+
+        join(cmd, "git rev-parse origin", p.branch, '/');
+        run((char *[]) { "git", "fetch", "--all", NULL });
+
+        if (run_get("git rev-parse HEAD", local, sizeof(local)) ||
+            run_get(cmd, remote, sizeof(remote))) {
+                perror("RUN_GET");
+                return 0;
+        }
+
+        return strcmp(local, remote);
+}
+
+void clone(Package p);
+void build(Package p);
+
+void
+build(Package p)
+{
+        char path[127];
+        char bp[128] = { 0 };
+        char ep[128] = { 0 };
+        char **recipel;
+
+        if (!is_cloned(p)) clone(p);
+
+        join(path, clone_path, p.name, '/');
+        if (chdir(path)) {
+                perror("chdir");
+                free(recipel);
+                exit(0);
+        }
+
+        run(recipel = split(p.recipe, ' '));
+        free(recipel);
+
+        join(bp, bin_path, p.name, '/');
+        join(ep, path, p.name, '/');
+
+        printf("[LINK] %s ---> %s\n", ep, bp);
+        if (link(ep, bp)) {
+                perror("link");
+        }
+}
+
+void
+clone(Package p)
+{
+        char path[127];
+        if (is_cloned(p)) {
+                printf("Package %s already downloaded\n", p.name);
+                return;
+        }
+
+        join(path, clone_path, p.name, '/');
+        run((char *[]) { "git", "clone", "-b", p.branch, p.git, path, NULL });
+}
+
+void
+pminstall(Package p)
+{
+        switch (fork()) {
+        case -1:
+                perror("fork");
+                exit(0);
+        case 0: break;
+        default: return;
+        }
+
+        if (!is_cloned(p)) clone(p);
+        build(p);
+        exit(0);
+}
+
+
+void
+update(Package p)
+{
+        char b[32];
+        char path[64];
+
+        join(path, clone_path, p.name, '/');
+        if (chdir(path)) {
+                perror("chdir");
+                exit(0);
+        }
+
+        join(b, "origin", p.branch, '/');
+        run((char *[]) { "git", "fetch", "--all", NULL });
+        run((char *[]) { "git", "reset", "--hard", b, NULL });
+}
+
+void
+pmupdate(Package p)
+{
+        switch (fork()) {
+        case -1:
+                perror("fork");
+                exit(0);
+        case 0: break;
+        default: return;
+        }
+
+        if (!need_update(p)) {
+                printf("[SKIP] package %s already updated\n", p.name);
+                exit(0);
+        }
+
+        update(p);
+        build(p);
+
+        exit(0);
+}
+
+void
+pmupdateall()
+{
+        int i = 0;
+        for (; i < packarr.count; i++) {
+                if (!is_installed(packarr.packages[i])) {
+                        pminstall(packarr.packages[i]);
+                        wait(NULL); // or not
+                        continue;
+                }
+                pmupdate(packarr.packages[i]);
+                wait(NULL); // or not
+        }
+        return;
+}
+
+#define PAK(...)                        \
+        pmadd((Package) {               \
+        .recipe = "make", /* default */ \
+        .branch = "main", /* default */ \
+        __VA_ARGS__ });
 
 int
 main()
@@ -247,18 +360,11 @@ main()
         create_path_if_not_exits(clone_path);
         create_path_if_not_exits(state_path);
 
-        pmadd((Package) {
-        .name = "st",
-        .git = "https://git.suckless.org/st",
-        .recipe = "make",
-        });
+        PAK(.name = "pm",
+            .git = "https://github.com/hugoocoto/pm")
 
-        // pmadd((Package) {
-        // .name = "vicel",
-        // .git = "https://github.com/hugoocoto/vicel",
-        // .recipe = "make",
-        // });
+/*   */ #include "pm.config"
 
+        pmupdateall();
         pmlist();
-        pmupdate();
 }

@@ -1,25 +1,37 @@
                                        pm
-pm is a package manager. It solves the problem of handle packages from
-external repositories.
+pm package manager.
 
-AUTHOR
-Hugo Coto Flórez (me@hugocoto.com). Github profile: 
-https://github.com/hugoocoto
+DESCRIPTION
+        pm is a package manager. It solves the problem of handle packages from
+        external repositories. Configuration is done using pm.config in the same
+        directory as the source file at compilation. This means that the config
+        is applied at compilation so pm should be rebuild every time config file
+        changes.
+
+AUTOR
+        Hugo Coto Flórez (me@hugocoto.com). Github profile:
+        https://github.com/hugoocoto
 
 LICENSE
-GNU Public License
+        GNU Public License
 
-STANDARD
-c99 for unix like systems
+STANDARDS
+        c99 for unix like systems
 
 SOURCE CODE
-Source code is avaliable for free. You can download it from github:
-https://github.com/hugoocoto/pm
+        Source code is avaliable for free. You can download it from github:
+        https://github.com/hugoocoto/pm
 
+EXAMPLES
+        'pm.config' that installs the latest version of st and vicel:
 
-Note that: 
-- Installation is implemented, but update isn't
-- Config is in pm.c 
-- Recompilation is needed after changing config
-- No tested. It works on some github repos
-- Recipe must be a single program with no or more arguments
+                PAK(.name = "st",
+                    .git = "https://git.suckless.org/st",
+                    .branch = "master")
+
+                PAK(.name = "vicel",
+                    .git = "https://github.com/hugoocoto/vicel")
+
+BUGS
+TODOS
+        Automatically rebuild on config changes.
