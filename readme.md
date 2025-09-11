@@ -22,6 +22,7 @@ https://github.com/hugoocoto/pm
 ```
 
 Note that: 
+- Installation is implemented, but update isn't
 - Config is in pm.c 
 - Recompilation is needed after changing config
 - No tested. It works on some github repos
