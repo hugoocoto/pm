@@ -15,6 +15,10 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#if _POSIX_C_SOURCE < 200112L
+#define _POSIX_C_SOURCE 200112L // setenv
+#endif
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,8 +42,9 @@ int pmupdate();       /* Update/install all packages */
 int pmadd(Package p); /* Add a package to package list */
 void pmlist();        /* Print package list */
 
-static char *bin_path = "/home/hugo/.local/share/pm/bin/";
-static char *state_path = "/home/hugo/.local/share/pm/state/";
+static char *bin_path = "/home/hugo/.local/share/pm/bin";
+static char *clone_path = "/home/hugo/.local/share/pm/cache";
+static char *state_path = "/home/hugo/.local/share/pm/state";
 
 #ifndef strdup
 #define strdup(s) memcpy(malloc(strlen(s) + 1), (s), strlen(s) + 1);
@@ -55,9 +60,32 @@ join(char *buf, char *left, char *right, char sep)
         memcpy(buf + ls + 1, right, rs);
         buf[ls + rs + 1] = 0;
         buf[ls] = sep;
-        printf("join %s and %s with %c ==> %s\n", left, right, sep, buf);
         return buf;
 }
+
+char **
+split(char *str, char sep)
+{
+        char **arr = NULL;
+        int arrlen = 0;
+        char *c;
+        char *s = str;
+        while ((c = strchr(s, sep))) {
+                *c = 0;
+                arr = realloc(arr, sizeof(char *) * (arrlen + 1));
+                arr[arrlen] = s;
+                ++arrlen;
+                s = c + 1;
+        }
+        arr = realloc(arr, sizeof(char *) * (arrlen + 2));
+        arr[arrlen] = s;
+        ++arrlen;
+
+        arr[arrlen] = NULL;
+
+        return arr;
+}
+
 
 int
 create_path_if_not_exits(char *path)
@@ -69,13 +97,13 @@ create_path_if_not_exits(char *path)
         c = p = strdup(path);
         while ((c = strchr(c + 1, '/'))) {
                 *c = 0;
-                s = mkdir(p, 0755);
+                s = mkdir(p, 0777);
                 *c = '/';
                 if (s && errno != EEXIST) return free(p), s;
         }
 
         if (*path) {
-                s = mkdir(p, 0600);
+                s = mkdir(p, 0777);
                 if (s && errno != EEXIST) return free(p), s;
         }
 
@@ -83,20 +111,11 @@ create_path_if_not_exits(char *path)
 }
 
 void
-add_path_to_PATH(char *path)
-{
-        char *epath = strdup(getenv("PATH") ?: "");
-        epath = realloc(epath, strlen(epath) + strlen(path) + 1);
-        strcat(epath, path);
-        free(epath);
-}
-
-void
 pmlist()
 {
         int i = 0;
         for (; i < packarr.count; i++) {
-                printf("Name: %s (%s)\n", packarr.packages[i].name, packarr.packages[i].git);
+                printf("[INFO] %s (%s)\n", packarr.packages[i].name, packarr.packages[i].git);
         }
 }
 
@@ -122,30 +141,84 @@ is_installed(Package p)
 }
 
 int
+is_cloned(Package p)
+{
+        struct stat s;
+        if (stat(join((char[128]) { 0 }, clone_path, p.name, '/'), &s)) {
+                /* Should handle errors */
+                return 0;
+        }
+        return 1;
+}
+
+int
 pminstall(Package p)
 {
-        char path[64];
         int pid;
+        int status;
+        char path[127];
 
-        if (is_installed(p)) {
+        if (is_cloned(p)) {
                 printf("Package %s already installed. Skip update check\n",
                        p.name);
                 return 1;
         }
 
-        sprintf(path, "%s/%s", bin_path, p.name);
+        join(path, clone_path, p.name, '/');
+
         switch (pid = fork()) {
         case -1:
                 perror("fork");
                 exit(1);
         case 0:
-                printf("Run: %s %s %s %s %s\n", "git", "git", "clone", p.git, path);
+                printf("[RUN]: %s %s %s %s %s\n", "git", "git", "clone", p.git, path);
                 execlp("git", "git", "clone", p.git, path, NULL);
                 perror("execlp");
                 exit(0);
 
         default:
-                waitpid(pid, NULL, 0);
+                waitpid(pid, &status, 0);
+                if (status != 0) return 1;
+        }
+
+        switch (pid = fork()) {
+        case -1:
+                perror("fork");
+                exit(1);
+        case 0:
+                chdir(path);
+                printf("[RUN]: %s\n", p.recipe);
+                char **recipel = split(p.recipe, ' ');
+                execvp(recipel[0], recipel);
+                perror("execlp");
+                free(recipel);
+                exit(0);
+
+        default:
+                waitpid(pid, &status, 0);
+                if (status != 0) return 1;
+        }
+
+        switch (pid = fork()) {
+        case -1:
+                perror("fork");
+                exit(1);
+        case 0: {
+                char bp[128] = { 0 };
+                char ep[128] = { 0 };
+                join(bp, bin_path, p.name, '/');
+                join(ep, path, p.name, '/');
+
+                printf("[LINK] %s ---> %s\n", ep, bp);
+                if (link(ep, bp)) {
+                        perror("link");
+                }
+                exit(0);
+        }
+
+        default:
+                waitpid(pid, &status, 0);
+                if (status != 0) return 1;
         }
 
 
@@ -171,9 +244,8 @@ int
 main()
 {
         create_path_if_not_exits(bin_path);
+        create_path_if_not_exits(clone_path);
         create_path_if_not_exits(state_path);
-
-        add_path_to_PATH(bin_path);
 
         pmadd((Package) {
         .name = "st",
@@ -181,11 +253,11 @@ main()
         .recipe = "make",
         });
 
-        pmadd((Package) {
-        .name = "vicel",
-        .git = "https://github.com/hugoocoto/vicel",
-        .recipe = "make",
-        });
+        // pmadd((Package) {
+        // .name = "vicel",
+        // .git = "https://github.com/hugoocoto/vicel",
+        // .recipe = "make",
+        // });
 
         pmlist();
         pmupdate();
