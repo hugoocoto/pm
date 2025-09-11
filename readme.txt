@@ -6,7 +6,7 @@ DESCRIPTION
         pm is a package manager. It solves the problem of handle packages from
         external repositories. Configuration is done using pm.config in the same
         directory as the source file at compilation. This means that the config
-        is applied at compilation so pm should be rebuild every time config file
+        is applied at compilation so pm must be rebuilt every time config file
         changes.
 
 
