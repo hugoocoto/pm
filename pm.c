@@ -64,12 +64,12 @@ strjoin(char *buf, char *left, char *right, char sep)
 }
 
 char **
-strsplit(char *str, char sep, char *tofree)
+strsplit(char *str, char sep, char **tofree)
 {
         char **arr = NULL;
         int arrlen = 0;
         char *c;
-        char *s = tofree = strdup(str);
+        char *s = *tofree = strdup(str);
         while ((c = strchr(s, sep))) {
                 *c = 0;
                 arr = realloc(arr, sizeof(char *) * (arrlen + 1));
@@ -159,7 +159,7 @@ run(char **argv)
         char **arg = argv;
         int status;
 
-        printf("[RUN ]");
+        printf("RUN:");
         do {
                 printf(" %s", *arg);
         } while ((*++arg));
@@ -183,7 +183,7 @@ run(char **argv)
 int
 run_get(const char *cmd, char *out, size_t len)
 {
-        printf("[RUN ] %s\n", cmd);
+        printf("RUN: %s\n", cmd);
         FILE *fp = popen(cmd, "r");
         if (!fp) return 1;
 
@@ -250,7 +250,7 @@ build(Package p)
                 exit(0);
         }
 
-        run(recipel = strsplit(p.recipe, ' ', b));
+        run(recipel = strsplit(p.recipe, ' ', &b));
         free(recipel);
         free(b);
 
@@ -361,9 +361,6 @@ main()
         create_path_if_not_exits(bin_path);
         create_path_if_not_exits(clone_path);
         create_path_if_not_exits(state_path);
-
-        PAK(.name = "pm",
-            .git = "https://github.com/hugoocoto/pm")
 
 /*   */ #include "pm.config"
 
