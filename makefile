@@ -1,2 +1,2 @@
 all:
-	c99 ./pm.c -o pm 
+	c99 ./pm.c -o pm  -ggdb

@@ -51,7 +51,7 @@ static char *state_path = "/home/hugo/.local/share/pm/state";
 #endif
 
 char *
-join(char *buf, char *left, char *right, char sep)
+strjoin(char *buf, char *left, char *right, char sep)
 {
         /* Unsafe */
         size_t ls = strlen(left);
@@ -64,12 +64,12 @@ join(char *buf, char *left, char *right, char sep)
 }
 
 char **
-split(char *str, char sep)
+strsplit(char *str, char sep, char *tofree)
 {
         char **arr = NULL;
         int arrlen = 0;
         char *c;
-        char *s = str;
+        char *s = tofree = strdup(str);
         while ((c = strchr(s, sep))) {
                 *c = 0;
                 arr = realloc(arr, sizeof(char *) * (arrlen + 1));
@@ -134,7 +134,7 @@ int
 is_installed(Package p)
 {
         struct stat s;
-        if (stat(join((char[128]) { 0 }, bin_path, p.name, '/'), &s)) {
+        if (stat(strjoin((char[128]) { 0 }, bin_path, p.name, '/'), &s)) {
                 /* Should handle errors */
                 return 0;
         }
@@ -145,7 +145,7 @@ int
 is_cloned(Package p)
 {
         struct stat s;
-        if (stat(join((char[128]) { 0 }, clone_path, p.name, '/'), &s)) {
+        if (stat(strjoin((char[128]) { 0 }, clone_path, p.name, '/'), &s)) {
                 /* Should handle errors */
                 return 0;
         }
@@ -159,7 +159,7 @@ run(char **argv)
         char **arg = argv;
         int status;
 
-        printf("[RUN ] ");
+        printf("[RUN ]");
         do {
                 printf(" %s", *arg);
         } while ((*++arg));
@@ -201,7 +201,7 @@ int
 chdircloned(Package p)
 {
         char path[127];
-        join(path, clone_path, p.name, '/');
+        strjoin(path, clone_path, p.name, '/');
         if (chdir(path)) {
                 perror("chdir");
                 return 1;
@@ -218,7 +218,7 @@ need_update(Package p)
 
         if (chdircloned(p)) return 0;
 
-        join(cmd, "git rev-parse origin", p.branch, '/');
+        strjoin(cmd, "git rev-parse origin", p.branch, '/');
         run((char *[]) { "git", "fetch", "--all", NULL });
 
         if (run_get("git rev-parse HEAD", local, sizeof(local)) ||
@@ -240,21 +240,22 @@ build(Package p)
         char bp[128] = { 0 };
         char ep[128] = { 0 };
         char **recipel;
+        char *b;
 
         if (!is_cloned(p)) clone(p);
 
-        join(path, clone_path, p.name, '/');
+        strjoin(path, clone_path, p.name, '/');
         if (chdir(path)) {
                 perror("chdir");
-                free(recipel);
                 exit(0);
         }
 
-        run(recipel = split(p.recipe, ' '));
+        run(recipel = strsplit(p.recipe, ' ', b));
         free(recipel);
+        free(b);
 
-        join(bp, bin_path, p.name, '/');
-        join(ep, path, p.name, '/');
+        strjoin(bp, bin_path, p.name, '/');
+        strjoin(ep, path, p.name, '/');
 
         printf("[LINK] %s ---> %s\n", ep, bp);
         if (link(ep, bp)) {
@@ -271,7 +272,7 @@ clone(Package p)
                 return;
         }
 
-        join(path, clone_path, p.name, '/');
+        strjoin(path, clone_path, p.name, '/');
         run((char *[]) { "git", "clone", "-b", p.branch, p.git, path, NULL });
 }
 
@@ -298,13 +299,13 @@ update(Package p)
         char b[32];
         char path[64];
 
-        join(path, clone_path, p.name, '/');
+        strjoin(path, clone_path, p.name, '/');
         if (chdir(path)) {
                 perror("chdir");
                 exit(0);
         }
 
-        join(b, "origin", p.branch, '/');
+        strjoin(b, "origin", p.branch, '/');
         run((char *[]) { "git", "fetch", "--all", NULL });
         run((char *[]) { "git", "reset", "--hard", b, NULL });
 }
@@ -336,6 +337,7 @@ pmupdateall()
 {
         int i = 0;
         for (; i < packarr.count; i++) {
+                printf("[NAME] %s\n", packarr.packages[i].name);
                 if (!is_installed(packarr.packages[i])) {
                         pminstall(packarr.packages[i]);
                         wait(NULL); // or not
