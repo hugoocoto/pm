@@ -312,7 +312,8 @@ int
 main(int argc, char **argv)
 {
         const char *init_config;
-        flag_program(.help = "~ pm by Hugo Coto");
+        const char *desc = format("~ pm by Hugo Coto. Built on %s %s", __DATE__, __TIME__);
+        flag_program(.help = desc);
         flag_add(&init_config, "--init", .help = "Create init.lua");
 
         if (flag_parse(&argc, &argv)) {
@@ -340,4 +341,6 @@ main(int argc, char **argv)
         free(file);
 
         flag_free();
+        free((void *) desc);
+        return 0;
 }
