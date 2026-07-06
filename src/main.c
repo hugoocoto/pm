@@ -98,14 +98,13 @@ url_file_get_modification_time(const char *url)
 {
         struct tm tm = { 0 };
         char weekday[4], month_str[4];
-        char t[128];
         char *buf =
         run_and_get(format("curl -sIL %s | grep -i last-modified", url)) ?:
         run_and_get(format("curl -sIL %s | grep -i date", url))          ?:
                                                                            0;
         assert(buf);
 
-        if (sscanf(t, "last-modified: %3s, %d %3s %d %d:%d:%d GMT",
+        if (sscanf(buf, "last-modified: %3s, %d %3s %d %d:%d:%d GMT",
                    weekday, &tm.tm_mday, month_str, &tm.tm_year,
                    &tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 7) {
                 free(buf);
