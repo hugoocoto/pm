@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <assert.h>
 #include <errno.h>
 #include <libgen.h>
@@ -132,7 +134,7 @@ url_file_get_modification_time(const char *url)
 char *
 url_get_filename(const char *url)
 {
-        char *c = strrchr(url, '/');
+        const char *c = strrchr(url, '/');
         if (c == NULL) return NULL; // no '/' in the url
         if (c[1] == 0) return NULL; // url ends with '/' -> no filename
         return strdup(c + 1);
@@ -148,30 +150,39 @@ int
 process_package(const char *url, const char *build, const char *name, const char *build_path)
 {
         if (url == NULL) {
-                printf("  Error: URL not present\n");
+                if (
+#define FIELD(x) x ||
+                FIELD_LIST()
+#undef FIELD
+                0) // print the error msg only if at least one field is set.
+                        printf("  Error: URL not present\n");
                 return 1;
         }
 
-        // #define FIELD(x) printf("+ " #x ": %s\n", x);
-        //         FIELD_LIST();
-        // #undef FIELD
-
         char *filename = name ? strdup(name) : url_get_filename(url);
         assert(filename);
-        if (filename == NULL) goto err;
 
-        char *path = format("%s/%s", build_path, filename);
-        assert(path);
-        if (path == NULL) goto err;
+        char *dir = format("%s/%s/", build_path, filename);
+        assert(dir);
+        if (mkdirp(dir, 0755)) {
+                perror("  mkdir");
+                goto err;
+        }
 
-        if (!file_exists(path)) {
+        char *file = format("%s/%s", dir, filename);
+        assert(file);
+
+        char *cwd = get_current_dir_name();
+        assert(cwd);
+
+        if (!file_exists(file)) {
                 printf("  File not found. Downloading...\n");
-                if (download(url, path)) goto err;
+                if (download(url, file)) goto err;
                 goto build;
         }
 
         time_t t0 = url_file_get_modification_time(url);
-        time_t t1 = file_get_modification_date(path);
+        time_t t1 = file_get_modification_date(file);
 
         if (t0 > t1) {
                 printf("  File is newer. Downloading...\n");
@@ -182,24 +193,30 @@ process_package(const char *url, const char *build, const char *name, const char
 
 build:
         if (build) {
-                if (chdir(build_path)) {
-                        perror("  Build error");
+                if (chdir(dir)) {
+                        perror("  Build error (chdir)");
+                        goto err;
                 }
                 if (system(build)) {
-                        perror("  Build error");
+                        perror("  Build error (system)");
+                        goto err;
+                }
+                if (chdir(cwd)) {
+                        perror("  Build error (chdir)");
+                        goto err;
                 }
         }
 
+        int status = 0;
 exit:
-        assert(filename && path);
-        free(filename);
-        free(path);
-        return 0;
+        status = 1;
 err:
-        assert(filename && path);
+        assert(filename && file && cwd && dir);
         free(filename);
-        free(path);
-        return 1;
+        free(file);
+        free(cwd);
+        free(dir);
+        return status;
 }
 
 void
@@ -230,7 +247,7 @@ dump_config(const char *file)
         $("        -- pm bootstraping. Keep pm updated.");
         $("        url = \"https://github.com/hugoocoto/pm/releases/download/nightly/pm.tar.gz\",");
         $("        name = pm,");
-        $("        build = \"tar -xzf pm.tar.gz && cd pm && make && cp ./pm ~/.local/bin/pm\",");
+        $("        build = \"tar -xzf pm.tar.gz && make && mv ./pm ~/.local/bin/pm\",");
         $("    },");
         $("}");
 #undef $
@@ -249,8 +266,12 @@ load_config(const char *file)
         if (Conf_open(&conf, file)) return 1;
 
         // build path (Lua Build.path)
-        const char *build_path = ".cache/";
-        Conf_get_str(conf, &build_path, "Build.path");
+        const char *build_path = NULL;
+        if (Conf_get_str(conf, &build_path, "Build.path")) {
+                printf("Error: field `Build = { path = "
+                       " }` is required. In %s\n",
+                       file);
+        }
         printf("Build path: %s\n", build_path);
         if (mkdirp(build_path, 0755)) {
                 perror(build_path);

@@ -1,6 +1,6 @@
 # pm
 
-You might be asking why I wrote another Pacmage Manager. Good question. I don't
+You might be asking why I wrote another Package Manager. Good question. I don't
 know either.
 
 ## Usage
@@ -13,7 +13,7 @@ know either.
 ## Build
 
 There is a Makefile. But to be honest, it's a single main.c, do whatever you
-want. Then you may want to move the executable to `.local/bin` or whatever. At
+want. Then you may want to move the executable to `~/.local/bin` or whatever. At
 least this is what the bootstraping do. You can change it from the configuration
 file.
 

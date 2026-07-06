@@ -1,7 +1,7 @@
 SRC = $(wildcard src/*.c)
 HEADERS = $(wildcard src/*.h)
 OUT = pm
-FLAGS = -Wall -Wextra -ggdb $(LIBS) -std=c99 -D_DEFAULT_SOURCE
+FLAGS = -Wall -Wextra -ggdb $(LIBS) -std=c99
 LIBS = -llua -lcrypto -lcurl
 CC = cc
 RM = rm -rf
@@ -14,4 +14,5 @@ $(OUT): $(HEADERS)
 clean: $(OUT)
 	$(RM) $^
 
-
+cleanall:
+	$(RM) $(OUT) ~/.local/share/pm ~/.local/bin/pm ~/.local/state/pm .cache
