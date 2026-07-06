@@ -153,9 +153,6 @@ int
 process_package(FIELD_LIST const char *build_path, const char *bin_path)
 {
 #undef FIELD
-#define FIELD(x, req, ...) !x &&
-        if (FIELD_LIST 1) return 0; // all the fields are null - empty package
-#undef FIELD
 #define FIELD(x, req, ...)                               \
         if (x == NULL && req) {                          \
                 printf("  Error: " #x " not present\n"); \
@@ -317,7 +314,7 @@ load_config(const char *file)
         printf("packages: %d\n", len);
 
         for (int i = 1; i <= len; i++) {
-                printf("== PACKAGE %d ==\n", i);
+                printf("Package %d\n", i);
 #define FIELD(x, ...)                                                  \
         if (Conf_get_str(conf, &x, "Packages.%d." #x, i) == CONF_OK) { \
                 printf("  " #x ": %s\n", x ?: "undefined");            \
@@ -325,6 +322,16 @@ load_config(const char *file)
         }
                 FIELD_LIST;
 #undef FIELD
+
+#define FIELD(x, req, ...) !x &&
+                if (FIELD_LIST 1) {
+                        printf("  Empty. Skipping...\n");
+                        continue;
+                } // all the fields are null - empty package
+#undef FIELD
+
+                // allow ignoring artifact for direct downloaded files
+                if (!artifact && name) artifact = strdup(name);
 
 #define FIELD(x, ...) x,
                 if (process_package(FIELD_LIST build_path, bin_path)) {
