@@ -180,6 +180,9 @@ process_package(FIELD_LIST const char *build_path, const char *bin_path)
         char *bin = format("%s/%s", bin_path, filename);
         assert(file);
 
+        char *bin_art = format("%s/%s", bin_path, artifact);
+        assert(file);
+
         char *cwd = get_current_dir_name();
         assert(cwd);
 
@@ -217,8 +220,8 @@ build:
                 goto err;
         }
 
-        printf("  > copy %s to %s\n", artifact, bin);
-        if (copy(artifact, bin)) {
+        printf("  > copy %s to %s\n", artifact, bin_art);
+        if (copy(artifact, bin_art)) {
                 perror("  Build error (copy to bin)");
                 goto err;
         }
@@ -237,6 +240,8 @@ exit:
         free(file);
         free(cwd);
         free(dir);
+        free(bin);
+        free(bin_art);
         return status;
 }
 
