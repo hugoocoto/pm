@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <errno.h>
+#include <libgen.h>
 #include <openssl/evp.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -7,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <utime.h>
 
 #include <curl/curl.h>
@@ -14,6 +16,10 @@
 
 #define INCLUDE_CONF_IMPLEMENTATION
 #include "conf.h"
+
+#define FS_IMPLEMENTATION
+#include "fs.h"
+
 #include "flag.h"
 
 char *
@@ -27,182 +33,6 @@ format(const char *fmt, ...)
         assert(buf);
         return buf;
 }
-
-// make directory if not exists, make parent if needed.
-int
-mkdirp(const char *path)
-{
-        char *c;
-        char *p;
-        int s;
-
-        c = p = strdup(path);
-        while ((c = strchr(c + 1, '/'))) {
-                *c = 0;
-                s = mkdir(p, 0755);
-                *c = '/';
-                if (s && errno != EEXIST) return s;
-        }
-
-        if (!c) {
-                s = mkdir(p, 0755);
-                if (s && errno != EEXIST) return s;
-        }
-
-        return 0;
-}
-
-int
-copy(const char *file1, const char *file2)
-{
-        FILE *f1 = NULL, *f2 = NULL;
-        char buf[4096];
-        int status = 0;
-
-        if ((f1 = fopen(file1, "rb")) == NULL) {
-                perror(file1);
-                status = 1;
-                goto err;
-        }
-
-        if ((f2 = fopen(file2, "wb")) == NULL) {
-                perror(file2);
-                status = 1;
-                goto err;
-        }
-
-        for (;;) {
-                ssize_t n = fread(buf, 1, sizeof buf, f1);
-                if (n < 0) {
-                        perror("fread");
-                        status = 1;
-                        goto err;
-                }
-                if (n == 0) break;
-                assert(fwrite(buf, 1, n, f2) == (size_t) n);
-        }
-
-err:
-        if (f1) fclose(f1);
-        if (f2) fclose(f2);
-        return status;
-}
-
-int
-touch(const char *file)
-{
-        int status = 0;
-        if (utime(file, NULL)) {
-                if (errno == ENOENT) {
-                        FILE *f = fopen(file, "w");
-                        if (f == NULL) perror(file);
-                        status = f != NULL;
-                        if (f) fclose(f);
-                        return status;
-                }
-                perror(file);
-                status = 1;
-        }
-        return status;
-}
-
-int
-file_hash(const char *path, unsigned char out[EVP_MAX_MD_SIZE], unsigned int *out_len)
-{
-        unsigned char buf[4096];
-        EVP_MD_CTX *ctx;
-        size_t n;
-        FILE *f;
-
-        if (!(f = fopen(path, "rb"))) goto err;
-        if (!(ctx = EVP_MD_CTX_new())) goto err;
-
-        if (!EVP_DigestInit_ex(ctx, EVP_sha256(), NULL)) goto err;
-
-        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
-                if (!EVP_DigestUpdate(ctx, buf, n)) goto err;
-        }
-
-        if (!EVP_DigestFinal_ex(ctx, out, out_len)) goto err;
-
-        EVP_MD_CTX_free(ctx);
-        fclose(f);
-        return 0;
-
-err:
-        if (ctx) EVP_MD_CTX_free(ctx);
-        if (f) fclose(f);
-        return -1;
-}
-
-int
-file_is_equal(const char *file1, const char *file2)
-{
-        struct stat sa, sb;
-        unsigned char ha[EVP_MAX_MD_SIZE], hb[EVP_MAX_MD_SIZE];
-        unsigned int la, lb;
-
-        if (!stat(file1, &sa) && !stat(file2, &sb)) {
-                if (sa.st_size != sb.st_size) return 0;
-        }
-
-        if (file_hash(file1, ha, &la) || file_hash(file2, hb, &lb)) return 0;
-        if (la != lb) return 0;
-
-        return memcmp(ha, hb, la) == 0;
-}
-
-bool
-file_is_newer(const char *file, const char *reference)
-{
-        struct stat stat1, stat2;
-
-        if (stat(reference, &stat1)) {
-                if (errno != ENOENT) perror(reference);
-                return false;
-        }
-
-        if (stat(file, &stat2)) {
-                if (errno != ENOENT) perror(file);
-                return false;
-        }
-
-        if (stat1.st_mtim.tv_sec < stat2.st_mtim.tv_sec ||
-            (stat1.st_mtim.tv_sec == stat2.st_mtim.tv_sec &&
-             stat1.st_mtim.tv_nsec < stat2.st_mtim.tv_nsec)) {
-                return true;
-        }
-
-        return false;
-}
-
-time_t
-file_get_modification_date(const char *file)
-{
-        struct stat stat1;
-        int err = 0;
-        if (stat(file, &stat1)) {
-                if (errno == ENOENT) return 0;
-                perror(file);
-                err = -1;
-        } else {
-                err = 0;
-        }
-        return err ?: stat1.st_mtim.tv_sec;
-}
-
-int
-file_exists(const char *file)
-{
-        /* idk if this works as expected */
-        struct stat st;
-        if (stat(file, &st)) {
-                if (errno != ENOENT) perror(file);
-                return false;
-        }
-        return true;
-}
-
 
 size_t
 _download_write(char *ptr, size_t size, size_t nmemb, void *stream)
@@ -264,13 +94,14 @@ run_and_get(const char *cmd)
 time_t
 url_file_get_modification_time(const char *url)
 {
+        struct tm tm = { 0 };
+        char weekday[4], month_str[4];
+        char t[128];
         char *buf =
         run_and_get(format("curl -sIL %s | grep -i last-modified", url)) ?:
         run_and_get(format("curl -sIL %s | grep -i date", url))          ?:
                                                                            0;
-        struct tm tm = { 0 };
-        char weekday[4], month_str[4];
-        char t[128];
+        assert(buf);
 
         if (sscanf(t, "last-modified: %3s, %d %3s %d %d:%d:%d GMT",
                    weekday, &tm.tm_mday, month_str, &tm.tm_year,
@@ -307,50 +138,186 @@ url_get_filename(const char *url)
         return strdup(c + 1);
 }
 
+#define FIELD_LIST() \
+        FIELD(url)   \
+        FIELD(build) \
+        FIELD(name)
+
+
 int
-try(const char *url)
+process_package(const char *url, const char *build, const char *name, const char *build_path)
 {
-        char *filename = url_get_filename(url);
+        if (url == NULL) {
+                printf("  Error: URL not present\n");
+                return 1;
+        }
+
+        // #define FIELD(x) printf("+ " #x ": %s\n", x);
+        //         FIELD_LIST();
+        // #undef FIELD
+
+        char *filename = name ? strdup(name) : url_get_filename(url);
+        assert(filename);
         if (filename == NULL) goto err;
 
-        char *path = format("%s", filename);
+        char *path = format("%s/%s", build_path, filename);
+        assert(path);
         if (path == NULL) goto err;
 
         if (!file_exists(path)) {
+                printf("  File not found. Downloading...\n");
                 if (download(url, path)) goto err;
-                free(filename);
-                free(path);
-                return 0;
+                goto build;
         }
 
         time_t t0 = url_file_get_modification_time(url);
         time_t t1 = file_get_modification_date(path);
 
         if (t0 > t1) {
-                printf("File is newer! Download again\n");
+                printf("  File is newer. Downloading...\n");
         } else {
-                printf("File is updated\n");
+                printf("  File is updated. Skipping...\n");
+                goto exit;
         }
 
+build:
+        if (build) {
+                if (chdir(build_path)) {
+                        perror("  Build error");
+                }
+                if (system(build)) {
+                        perror("  Build error");
+                }
+        }
+
+exit:
+        assert(filename && path);
+        free(filename);
+        free(path);
+        return 0;
 err:
+        assert(filename && path);
         free(filename);
         free(path);
         return 1;
 }
 
+void
+dump_config(const char *file)
+{
+        FILE *f = fopen(file, "w");
+#define $(x, ...) fprintf(f, x "\n", ##__VA_ARGS__)
+        $("--[[");
+        $("    ~ pm. A package manager by Hugo Coto.");
+        $("]] --");
+        $("");
+        $("-- Add ~/.config/pm/ to the path");
+        $("package.path = package.path .. \";\" .. os.getenv(\"HOME\") .. \"/.config/pm/?.lua\"");
+        $("");
+        $("-- Add ~/.config/pm/ to the path");
+        $("Build = {");
+        $("    path = os.getenv(\"HOME\") .. \"/.local/share/pm/cache/\"");
+        $("}");
+        $("");
+        $("--[[");
+        $("    Package possible fields:");
+#define FIELD(x) $("    - " #x);
+        FIELD_LIST();
+#undef FIELD
+        $("]] --");
+        $("Packages = {");
+        $("    {");
+        $("        -- pm bootstraping. Keep pm updated.");
+        $("        url = \"https://github.com/hugoocoto/pm/releases/download/nightly/pm.tar.gz\",");
+        $("        name = pm,");
+        $("        build = \"tar -xzf pm.tar.gz && cd pm && make && cp ./pm ~/.local/bin/pm\",");
+        $("    },");
+        $("}");
+#undef $
+        fclose(f);
+}
+
+int
+load_config(const char *file)
+{
+        Conf conf;
+        int len;
+#define FIELD(x) const char *x = NULL;
+        FIELD_LIST();
+#undef FIELD
+
+        if (Conf_open(&conf, file)) return 1;
+
+        // build path (Lua Build.path)
+        const char *build_path = ".cache/";
+        Conf_get_str(conf, &build_path, "Build.path");
+        printf("Build path: %s\n", build_path);
+        if (mkdirp(build_path, 0755)) {
+                perror(build_path);
+                exit(1);
+        }
+
+        if (Conf_get_len(conf, &len, "Packages")) return 1;
+        printf("packages: %d\n", len);
+
+        for (int i = 1; i <= len; i++) {
+                printf("== PACKAGE %d ==\n", i);
+#define FIELD(x)                                                       \
+        if (Conf_get_str(conf, &x, "Packages.%d." #x, i) == CONF_OK) { \
+                printf("  " #x ": %s\n", x ?: "undefined");            \
+                x = x ? strdup(x) : NULL;                              \
+        }
+                FIELD_LIST();
+#undef FIELD
+
+                process_package(
+#define FIELD(x) x,
+                FIELD_LIST()
+#undef FIELD
+                build_path);
+
+#define FIELD(x)                  \
+        if (x) {                  \
+                free((void *) x); \
+                x = NULL;         \
+        }
+                FIELD_LIST();
+#undef FIELD
+        }
+        if (Conf_close(conf)) return 1;
+        return 0;
+}
+
 int
 main(int argc, char **argv)
 {
+        const char *init_config;
         flag_program(.help = "~ pm by Hugo Coto");
+        flag_add(&init_config, "--init", .help = "Create init.lua");
 
         if (flag_parse(&argc, &argv)) {
                 flag_show_help(STDOUT_FILENO);
                 exit(1);
         }
 
-        for (int i = 1; i < argc; i++) {
-                try(argv[i]);
+        char *file = format("%s/.config/pm/init.lua", getenv("HOME") ?: "");
+        assert(file);
+
+        if (init_config) {
+                char *cpyfile = strdup(file);
+                assert(cpyfile);
+                char *bn = dirname(cpyfile);
+                mkdirp(bn, 0755);
+                free(cpyfile);
+                dump_config(file);
+                printf("New config file: %s\n", file);
         }
+
+        if (load_config(file)) {
+                printf("Error loading config file %s\n", file);
+        }
+
+        free(file);
 
         flag_free();
 }

@@ -1,0 +1,27 @@
+name: Nightly Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build source tarball
+        run: git archive --format=tar.gz --output=pm.tar.gz HEAD
+
+      - name: Create or update nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view nightly --repo ${{ github.repository }} &>/dev/null \
+            && gh release upload nightly pm.tar.gz --clobber --repo ${{ github.repository }} \
+            || gh release create nightly pm.tar.gz \
+              --title "Nightly build" \
+              --notes "Automated nightly release from ${{ github.sha }}" \
+              --repo ${{ github.repository }}
