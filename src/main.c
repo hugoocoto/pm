@@ -6,6 +6,7 @@
 #include <dirent.h>
 #include <err.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <libgen.h>
 #include <openssl/evp.h>
 #include <pthread.h>
@@ -148,57 +149,32 @@ cmd_run_and_get(const char *cmd)
 }
 
 int
-dir_lock_acquire(char *dir)
+dir_lock_acquire(const char *dir)
 {
-        DIR *d = opendir(dir);
-        if (d == NULL) {
-                perror("dir_lock_acquire opendir");
-                goto err;
-        }
-
-        int fd = dirfd(d);
+        int fd = open(dir, O_RDONLY | O_DIRECTORY);
         if (fd < 0) {
-                perror("dir_lock_acquire dirfd");
-                goto err;
+                perror("dir_lock_acquire open");
+                return -1;
         }
-
         if (flock(fd, LOCK_EX)) {
                 perror("dir_lock_acquire flock");
-                goto err;
+                close(fd);
+                return -1;
         }
-
-        closedir(d);
-        return 0;
-err:
-        closedir(d);
-        return 1;
+        return fd;
 }
 
 int
-dir_lock_release(char *dir)
+dir_lock_release(int fd)
 {
-        DIR *d = opendir(dir);
-        if (d == NULL) {
-                perror("dir_lock_release opendir");
-                goto err;
-        }
-
-        int fd = dirfd(d);
-        if (fd < 0) {
-                perror("dir_lock_release dirfd");
-                goto err;
-        }
-
+        if (fd < 0) return 0;
         if (flock(fd, LOCK_UN)) {
                 perror("dir_lock_release flock");
-                goto err;
+                close(fd);
+                return 1;
         }
-
-        closedir(d);
+        close(fd);
         return 0;
-err:
-        closedir(d);
-        return 1;
 }
 
 time_t
@@ -245,6 +221,7 @@ url_file_get_modification_time(const char *url, const char *custom_cmd, int cust
         return timegm(&tm);
 err:
         if (buf) free(buf);
+        errno = EINVAL;
         return -1;
 }
 
@@ -273,6 +250,7 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         char *xpath = NULL; // bin path
         char *xname = NULL; // bin name: xpath / artifact
         char *cwd = NULL;
+        int bfd = -1, xfd = -1;
 
         if ((fname = name ? strdup(name) : url_get_filename(url)) == NULL) goto err;
         if ((bpath = format("%s/%s", bdir, fname)) == NULL) goto err;
@@ -284,8 +262,10 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         if (mkdirp(bpath, 0755)) goto err;
         if (mkdirp(xpath, 0755)) goto err;
 
-        dir_lock_acquire(bpath);
-        dir_lock_acquire(xpath);
+        bfd = dir_lock_acquire(bpath);
+        if (bfd < 0) goto err;
+        xfd = dir_lock_acquire(xpath);
+        if (xfd < 0) goto err;
 
         if (!file_exists(bname)) {
                 printf("[%s] File not found. Downloading...\n", artifact);
@@ -343,8 +323,8 @@ err:
         status = 1;
         printf("[%s] Error: Package not installed\n", artifact);
 exit:
-        dir_lock_release(bpath);
-        dir_lock_release(xpath);
+        if (bfd >= 0) dir_lock_release(bfd);
+        if (xfd >= 0) dir_lock_release(xfd);
 
         if (fname) free(fname);
         if (bpath) free(bpath);
@@ -540,7 +520,12 @@ main(int argc, char **argv)
         }
 
 
-        char *file = format("%s/.config/pm/init.lua", getenv("HOME") ?: "");
+        const char *home = getenv("HOME");
+        if (!home) {
+                fprintf(stderr, "Error: $HOME is not set\n");
+                exit(1);
+        }
+        char *file = format("%s/.config/pm/init.lua", home);
         assert(file);
 
         if (init_config) {

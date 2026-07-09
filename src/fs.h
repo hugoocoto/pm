@@ -68,14 +68,20 @@ copy(const char *file1, const char *file2)
         }
 
         for (;;) {
-                ssize_t n = fread(buf, 1, sizeof buf, f1);
-                if (n < 0) {
-                        perror("fread");
+                size_t n = fread(buf, 1, sizeof buf, f1);
+                if (n == 0) {
+                        if (ferror(f1)) {
+                                perror("fread");
+                                status = 1;
+                                goto err;
+                        }
+                        break;
+                }
+                if (fwrite(buf, 1, n, f2) != n) {
+                        perror("fwrite");
                         status = 1;
                         goto err;
                 }
-                if (n == 0) break;
-                assert(fwrite(buf, 1, n, f2) == (size_t) n);
         }
 
 err:
