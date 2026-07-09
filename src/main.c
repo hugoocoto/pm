@@ -10,6 +10,7 @@
 #include <libgen.h>
 #include <openssl/evp.h>
 #include <pthread.h>
+#include <sched.h>
 #include <semaphore.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -52,6 +53,18 @@ typedef struct Task {
 int threads_number = 0;
 sem_t *sem = NULL;
 
+int
+nproc()
+{
+        cpu_set_t set;
+        if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+                int n = CPU_COUNT(&set);
+                if (n > 0) return n;
+        }
+        long n = sysconf(_SC_NPROCESSORS_ONLN);
+        return n > 0 ? (int) n : 1;
+}
+
 char *
 format(const char *fmt, ...)
 {
@@ -83,25 +96,15 @@ download(const char *url, const char *path)
                 goto err;
         }
 
-        if ((curl = curl_easy_init()) == NULL) {
-                goto err;
-        }
+        if ((curl = curl_easy_init()) == NULL) goto err;
 
         curl_easy_setopt(curl, CURLOPT_URL, url);
-
-        /* follow redirects */
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-        /* disable progress var if verbose is not set */
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
-
-        /* send all data to the write callback */
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _download_write);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);             /* follow redirects */
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);                 /* disable progress var if verbose is not set */
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _download_write); /* send all data to the write callback */
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
 
-        if ((result = curl_easy_perform(curl)) != CURLE_OK) {
-                goto err;
-        }
+        if ((result = curl_easy_perform(curl)) != CURLE_OK) goto err;
 
 err:
         if (curl) curl_easy_cleanup(curl);
@@ -120,8 +123,7 @@ cmd_run(const char *cmd)
                 return -1;
         case 0:
                 execlp("sh", "sh", "-c", cmd, NULL);
-                perror("sh");
-                exit(-1);
+                err(EXIT_FAILURE, "sh -c %s", cmd);
         default:
                 if (waitpid(pid, &status, 0) == -1) {
                         perror("waitpid");
@@ -129,11 +131,6 @@ cmd_run(const char *cmd)
                 }
                 return status;
         }
-
-        // sanity check: new process never returns from this function
-        assert(getpid() != pid);
-        assert(0 && "Unreachable");
-        return 0;
 }
 
 char *
@@ -187,7 +184,7 @@ url_file_get_modification_time(const char *url, const char *custom_cmd, int cust
         int offset;
         char *cmd;
 
-        if (!buf && custom_cmd) {
+        if (custom_cmd) {
                 buf = cmd_run_and_get(custom_cmd);
                 offset = custom_cmd_prefix_len;
         }
@@ -235,14 +232,39 @@ url_get_filename(const char *url)
 }
 
 int
+build_package(const char *build, const char *artifact, const char *fname, const char *bpath, const char *xname, const char *cwd)
+{
+        printf("[%s] Building...\n", artifact);
+        printf("[%s] > cd %s\n", artifact, bpath);
+        if (chdir(bpath)) {
+                fprintf(stderr, "[%s] Error: chdir %s: %s\n", fname, bpath, strerror(errno));
+                return 1;
+        }
+        printf("[%s] > sh -c '%s'\n", artifact, build);
+        if (cmd_run(build)) {
+                fprintf(stderr, "[%s] Error: cmd_run %s: %s\n", fname, build, strerror(errno));
+                return 1;
+        }
+        printf("[%s] > cp %s %s\n", artifact, artifact, xname);
+        if (copy(artifact, xname)) {
+                fprintf(stderr, "[%s] Error: copy %s: %s\n", fname, xname, strerror(errno));
+                return 1;
+        }
+        printf("[%s] > cd %s\n", artifact, cwd);
+        if (chdir(cwd)) {
+                fprintf(stderr, "[%s] Error: chdir %s: %s\n", fname, cwd, strerror(errno));
+                return 1;
+        }
+        printf("[%s] Package built succesfully\n", artifact);
+        return 0;
+}
+
+int
 #define FIELD(x, ...) const char *x,
 process_package(FIELD_LIST const char *bdir, const char *xdir)
 #undef FIELD
 {
-#define FIELD(x, req, ...) assert(!req || x);
-        FIELD_LIST
-#undef FIELD
-
+        /* REQUIRED ARGS HAVE TO BE SET */
         int status = 0;
         char *fname = NULL; // downloaded file name
         char *bpath = NULL; // build path
@@ -262,10 +284,8 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         if (mkdirp(bpath, 0755)) goto err;
         if (mkdirp(xpath, 0755)) goto err;
 
-        bfd = dir_lock_acquire(bpath);
-        if (bfd < 0) goto err;
-        xfd = dir_lock_acquire(xpath);
-        if (xfd < 0) goto err;
+        if ((bfd = dir_lock_acquire(bpath)) < 0) goto err;
+        if ((xfd = dir_lock_acquire(xpath)) < 0) goto err;
 
         if (!file_exists(bname)) {
                 printf("[%s] File not found. Downloading...\n", artifact);
@@ -295,29 +315,7 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         }
 
 build:
-        printf("[%s] Building...\n", artifact);
-        printf("[%s] > cd %s\n", artifact, bpath);
-        if (chdir(bpath)) {
-                fprintf(stderr, "[%s] Error: chdir %s: %s\n", fname, bpath, strerror(errno));
-                goto err;
-        }
-        printf("[%s] > sh -c '%s'\n", artifact, build);
-        if (cmd_run(build)) {
-                fprintf(stderr, "[%s] Error: cmd_run %s: %s\n", fname, build, strerror(errno));
-                goto err;
-        }
-        printf("[%s] > cp %s %s\n", artifact, artifact, xname);
-        if (copy(artifact, xname)) {
-                fprintf(stderr, "[%s] Error: copy %s: %s\n", fname, xname, strerror(errno));
-                goto err;
-        }
-        printf("[%s] > cd %s\n", artifact, cwd);
-        if (chdir(cwd)) {
-                fprintf(stderr, "[%s] Error: chdir %s: %s\n", fname, cwd, strerror(errno));
-                goto err;
-        }
-        printf("[%s] Package built succesfully\n", artifact);
-
+        if (build_package(build, artifact, fname, bpath, xname, cwd)) goto err;
         goto exit;
 err:
         status = 1;
@@ -325,7 +323,6 @@ err:
 exit:
         if (bfd >= 0) dir_lock_release(bfd);
         if (xfd >= 0) dir_lock_release(xfd);
-
         if (fname) free(fname);
         if (bpath) free(bpath);
         if (bname) free(bname);
@@ -383,9 +380,8 @@ process_package_wrapper(void *arg)
 #define FIELD(x, ...) t->x,
         process_package(FIELD_LIST t->build_path, t->bin_path);
 #undef FIELD
-        sem_post(sem);
+        sem_post(sem); // release lock
 
-        // move this to task_destroy or something
 #define FIELD(x, ...)                \
         if (t->x) {                  \
                 free((void *) t->x); \
@@ -396,7 +392,7 @@ process_package_wrapper(void *arg)
 }
 
 int
-load_config(const char *config_path)
+load_config(const char *config_path, int dump_and_exit)
 {
         const char *build_path = NULL; // build path (Lua Build.path)
         const char *bin_path = NULL;   // bin path (Lua Bin.path)
@@ -420,12 +416,15 @@ load_config(const char *config_path)
 
         if (Conf_get_len(conf, &len, "Packages")) return 1;
 
-        printf("Config\n");
-        printf("  Config path: %s\n", config_path);
-        printf("  Build  path: %s\n", build_path);
-        printf("  Binary path: %s\n", bin_path);
-        printf("  Packages: %d\n", len);
-        printf("  Threads:  %d\n", threads_number);
+        if (dump_and_exit) {
+                printf("Config\n");
+                printf("  Config path: %s\n", config_path);
+                printf("  Build  path: %s\n", build_path);
+                printf("  Binary path: %s\n", bin_path);
+                printf("  Packages: %d\n", len);
+                printf("  Threads: %d\n", threads_number);
+                goto exit;
+        }
 
         Da(Task) tasks = { 0 };
 
@@ -484,6 +483,7 @@ load_config(const char *config_path)
 
         Da_destroy(&tasks);
 
+exit:
         if (Conf_close(conf)) return 1;
         return 0;
 }
@@ -492,40 +492,46 @@ int
 main(int argc, char **argv)
 {
         const char *init_config;
+        const char *dump_and_exit;
         const char *nthreads;
-        const char *desc = format("~ pm by Hugo Coto. Built on %s %s", __DATE__, __TIME__);
-        flag_program(.help = desc);
-        flag_add(&init_config, "--init", .help = "Create init.lua");
-        flag_add(&nthreads, "--threads", .help = "Use T threads", .nargs = 1);
+        const char *home;
+        const char *version;
+        char *file;
 
-        if (flag_parse(&argc, &argv)) {
+        flag_program(.help = NULL); // unused. Just to suppress the unused warning
+        flag_add(&version, "--version", "-v", .help = "Show version");
+        flag_add(&init_config, "i", "init", .help = "Create init.lua");
+        flag_add(&nthreads, "t", "threads", .help = "Use T threads", .nargs = 1);
+        flag_add(&dump_and_exit, "s", "system", .help = "Show system configuration");
+
+        if (flag_parse(&argc, &argv) || argc > 1) {
                 flag_show_help(STDOUT_FILENO);
                 exit(1);
         }
 
-        if (nthreads) {
-                threads_number = atoi(nthreads);
-                if (threads_number <= 0) {
-                        printf("Threads number can not be 0 or less\n");
-                        exit(1);
-                }
-                printf("Number of threads: %d\n", threads_number);
-        } else {
-                threads_number = 1;
+        if (version) {
+                printf("pm version v0.1 (%s %s)\n", __DATE__, __TIME__);
+                printf("Copyright (C) 2026 Hugo Coto\n");
+                printf("This is free software: you are free to change and redistribute it.\n");
+                printf("There is NO WARRANTY, to the extent permitted by law.\n");
+                return 0;
         }
+
+        threads_number = nthreads ? atoi(nthreads) : nproc();
+        if (threads_number <= 0) {
+                errx(EXIT_FAILURE, "Threads number can not be 0 or less");
+        }
+
         sem = (sem_t *) malloc(sizeof(sem_t));
         if (sem_init(sem, 0, threads_number)) {
-                perror("sem_init");
-                exit(1);
+                errx(EXIT_FAILURE, "sem_init");
         }
 
-
-        const char *home = getenv("HOME");
-        if (!home) {
-                fprintf(stderr, "Error: $HOME is not set\n");
-                exit(1);
+        if (!(home = getenv("HOME"))) {
+                errx(EXIT_FAILURE, "Error: $HOME is not set\n");
         }
-        char *file = format("%s/.config/pm/init.lua", home);
+
+        file = format("%s/.config/pm/init.lua", home);
         assert(file);
 
         if (init_config) {
@@ -538,13 +544,12 @@ main(int argc, char **argv)
                 printf("New config file: %s\n", file);
         }
 
-        if (load_config(file)) {
+        if (load_config(file, dump_and_exit != 0)) {
                 printf("Error loading config file %s\n", file);
         }
 
         free(file);
         flag_free();
-        free((void *) desc);
         sem_destroy(sem);
         return 0;
 }
