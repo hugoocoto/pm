@@ -1,6 +1,7 @@
 #ifndef FS_H_
 #define FS_H_
 
+#include <errno.h>
 #include <openssl/evp.h>
 #include <stdbool.h>
 #include <sys/types.h>
@@ -29,14 +30,21 @@ mkdirp(const char *path, mode_t perms)
                 *c = 0;
                 s = mkdir(p, perms);
                 *c = '/';
-                if (s && errno != EEXIST) return s;
+                if (s && errno != EEXIST) {
+                        free(p);
+                        return s;
+                }
         }
 
         if (!c) {
                 s = mkdir(p, perms);
-                if (s && errno != EEXIST) return s;
+                if (s && errno != EEXIST) {
+                        free(p);
+                        return s;
+                }
         }
 
+        free(p);
         return 0;
 }
 
@@ -98,7 +106,7 @@ int
 file_hash(const char *path, unsigned char out[EVP_MAX_MD_SIZE], unsigned int *out_len)
 {
         unsigned char buf[4096];
-        EVP_MD_CTX *ctx;
+        EVP_MD_CTX *ctx = NULL;
         size_t n;
         FILE *f;
 

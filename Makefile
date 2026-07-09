@@ -1,18 +1,25 @@
 SRC = $(wildcard src/*.c)
 HEADERS = $(wildcard src/*.h)
 OUT = pm
-FLAGS = -Wall -Wextra -ggdb $(LIBS) -std=c99
+BASE_FLAGS = $(LIBS) -std=c99
 LIBS = -llua -lcrypto -lcurl
-CC = cc
+CC = clang
 RM = rm -rf
 
-$(OUT): $(SRC)
-	$(CC) $(FLAGS) $^ -o $@
+DEBUG_FLAGS = -O0 -Wall -Wextra -ggdb -fsanitize=address,null,undefined
+RELEASE_FLAGS = -O2 -Wall -Wextra
 
-$(OUT): $(HEADERS)
+release: FLAGS = $(BASE_FLAGS) $(RELEASE_FLAGS)
+release: $(OUT)
 
-clean: $(OUT)
-	$(RM) $^
+debug: FLAGS = $(BASE_FLAGS) $(DEBUG_FLAGS)
+debug: $(OUT)
+
+$(OUT): $(SRC) $(HEADERS)
+	$(CC) $(FLAGS) $(SRC) -o $@
+
+clean:
+	$(RM) $(OUT)
 
 cleanall:
 	$(RM) $(OUT) ~/.local/share/pm ~/.local/bin/pm ~/.local/state/pm .cache
