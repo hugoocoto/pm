@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <openssl/evp.h>
 #include <stdbool.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 
 int file_exists(const char *file);
@@ -82,6 +83,11 @@ copy(const char *file1, const char *file2)
                         status = 1;
                         goto err;
                 }
+        }
+
+        struct stat st;
+        if (stat(file1, &st) == 0) {
+                fchmod(fileno(f2), st.st_mode);
         }
 
 err:

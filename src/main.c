@@ -52,6 +52,7 @@ typedef struct Task {
 
 int threads_number = 0;
 sem_t *sem = NULL;
+pthread_mutex_t build_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int
 nproc()
@@ -232,30 +233,40 @@ url_get_filename(const char *url)
 }
 
 int
-build_package(const char *build, const char *artifact, const char *fname, const char *bpath, const char *xname, const char *cwd)
+build_package(const char *build, const char *artifact, const char *bpath, const char *xname, const char *cwd)
 {
+        if (pthread_mutex_lock(&build_lock)) {
+                err(EXIT_FAILURE, "Error: pthread_mutex_lock");
+        }
+
         printf("[%s] Building...\n", artifact);
+
         printf("[%s] > cd %s\n", artifact, bpath);
         if (chdir(bpath)) {
-                fprintf(stderr, "[%s] Error: chdir %s: %s\n", fname, bpath, strerror(errno));
+                fprintf(stderr, "[%s] Error: chdir %s: %s\n", artifact, bpath, strerror(errno));
                 return 1;
         }
         printf("[%s] > sh -c '%s'\n", artifact, build);
         if (cmd_run(build)) {
-                fprintf(stderr, "[%s] Error: cmd_run %s: %s\n", fname, build, strerror(errno));
+                fprintf(stderr, "[%s] Error: cmd_run %s: %s\n", artifact, build, strerror(errno));
                 return 1;
         }
         printf("[%s] > cp %s %s\n", artifact, artifact, xname);
         if (copy(artifact, xname)) {
-                fprintf(stderr, "[%s] Error: copy %s: %s\n", fname, xname, strerror(errno));
+                fprintf(stderr, "[%s] Error: copy %s: %s\n", artifact, xname, strerror(errno));
                 return 1;
         }
         printf("[%s] > cd %s\n", artifact, cwd);
         if (chdir(cwd)) {
-                fprintf(stderr, "[%s] Error: chdir %s: %s\n", fname, cwd, strerror(errno));
+                fprintf(stderr, "[%s] Error: chdir %s: %s\n", artifact, cwd, strerror(errno));
                 return 1;
         }
+
         printf("[%s] Package built succesfully\n", artifact);
+
+        if (pthread_mutex_unlock(&build_lock)) {
+                err(EXIT_FAILURE, "Error: pthread_mutex_unlock");
+        }
         return 0;
 }
 
@@ -315,7 +326,7 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         }
 
 build:
-        if (build_package(build, artifact, fname, bpath, xname, cwd)) goto err;
+        if (build_package(build, artifact, bpath, xname, cwd)) goto err;
         goto exit;
 err:
         status = 1;
