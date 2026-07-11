@@ -1,6 +1,7 @@
 SRC = $(wildcard src/*.c)
 HEADERS = $(wildcard src/*.h)
 OUT = pm
+MANDIR ?= $(HOME)/.local/share/man/man1
 BASE_FLAGS = $(LIBS) -std=c99
 LIBS = -llua -lcrypto -lcurl
 CC = clang
@@ -23,3 +24,7 @@ clean:
 
 cleanall:
 	$(RM) $(OUT) ~/.local/share/pm ~/.local/bin/pm ~/.local/state/pm .cache
+
+install: pm.1
+	mkdir -p $(MANDIR)
+	cp pm.1 $(MANDIR)/pm.1

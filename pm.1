@@ -1,0 +1,128 @@
+.TH PM 1 "July 2026" "pm v0.1" "User Commands"
+.SH NAME
+pm \- personal package manager
+.SH SYNOPSIS
+.B pm
+[\fB\-h\fR] [\fB\-v\fR]
+[\fBi\fR|\fBinit\fR]
+[\fBt\fR|\fBthreads\fR \fITHREADS\fR]
+[\fBs\fR|\fBsystem\fR]
+.SH DESCRIPTION
+.B pm
+is a package manager that reads a Lua configuration file and
+coordinates the download, build, and installation of software packages
+from remote URLs. Packages are processed in parallel using POSIX
+threads.
+.PP
+On each run
+.B pm
+reads
+.IR ~/.config/pm/init.lua .
+For each package defined in the configuration it checks whether a newer
+version is available on the remote server. If the remote file has been
+modified since the last download, the tarball or source is fetched,
+extracted, built with the provided shell script, and the resulting
+artifact is copied into the binary directory.
+.SH OPTIONS
+.TP
+\fB\-\-help\fR, \fB\-h\fR
+Show help message and exit.
+.TP
+\fB\-\-version\fR, \fB\-v\fR
+Display version, copyright, and license information, then exit.
+.TP
+\fBi\fR, \fBinit\fR
+Create a template configuration file at
+.IR ~/.config/pm/init.lua
+and process it. The template includes a bootstrap package that
+reinstalls
+.B pm
+itself from GitHub.
+.TP
+\fBt\fR, \fBthreads\fR \fITHREADS\fR
+Use at most
+.I THREADS
+parallel threads when building packages. If not specified, the number
+of online CPU cores is used.
+.TP
+\fBs\fR, \fBsystem\fR
+Print the current system configuration: config file path, build cache
+directory, binary directory, package count, and thread count.
+.SH CONFIGURATION
+The configuration file is a Lua script located at
+.IR ~/.config/pm/init.lua .
+It must define the following global tables:
+.TP
+.B Build
+A table with a single field:
+.RS
+.TP
+.B path
+Directory for downloaded sources and build caches.
+Default:
+.IR ~/.local/share/pm/cache/ .
+.RE
+.TP
+.B Bin
+A table with a single field:
+.RS
+.TP
+.B path
+Directory where built executables are installed.
+Default:
+.IR ~/.local/share/pm/bin/ .
+.RE
+.TP
+.B Packages
+An array of package tables. Each package may contain:
+.RS
+.TP
+.B url
+(Required) URL of the source archive to download.
+.TP
+.B name
+(Optional) File name for the downloaded source. If omitted the
+filename is extracted from the URL.
+.TP
+.B build
+(Required) Shell command or script that builds the source and
+produces the artifact.
+.TP
+.B artifact
+(Required) Name of the executable produced by the build script.
+If omitted, falls back to the value of
+.BR name .
+.TP
+.B last_modified_cmd
+(Optional) Custom shell command to retrieve the Last-Modified date of
+the remote file. The output must match the HTTP-date format
+.RI ( RFC\ 7231 ).
+.RE
+.PP
+If the configuration file does not exist, run
+.B pm init
+to create a template.
+.SH FILES
+.TP
+.I ~/.config/pm/init.lua
+Default configuration file.
+.TP
+.I ~/.local/share/pm/cache/
+Default build cache directory.
+.TP
+.I ~/.local/share/pm/bin/
+Default binary installation directory.
+.SH ENVIRONMENT
+.TP
+.B HOME
+Used to derive default paths for configuration, cache, and binary
+directories.
+.SH AUTHOR
+Hugo Coto Florez
+.br
+Project page: https://github.com/hugoocoto/pm
+.SH COPYRIGHT
+Copyright \(co 2026 Hugo Coto Florez.
+.br
+This is free software released under the MIT License and also into the
+public domain. There is NO WARRANTY, to the extent permitted by law.
