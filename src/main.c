@@ -52,7 +52,6 @@ typedef struct Task {
 
 int threads_number = 0;
 sem_t *sem = NULL;
-pthread_mutex_t build_lock;
 
 int
 nproc()
@@ -114,7 +113,7 @@ err:
 }
 
 int
-cmd_run(const char *cmd)
+cmd_run(const char *cmd, const char *root_path)
 {
         int status;
         int pid = fork();
@@ -123,6 +122,7 @@ cmd_run(const char *cmd)
                 perror("fork");
                 return -1;
         case 0:
+                if (chdir(root_path)) err(EXIT_FAILURE, "cd %s", root_path);
                 execlp("sh", "sh", "-c", cmd, NULL);
                 err(EXIT_FAILURE, "sh -c %s", cmd);
         default:
@@ -233,40 +233,23 @@ url_get_filename(const char *url)
 }
 
 int
-build_package(const char *build, const char *artifact, const char *bpath, const char *xname, const char *cwd)
+build_package(const char *build, const char *artifact, const char *bpath, const char *artifact_src, const char *xname)
 {
-        if (pthread_mutex_lock(&build_lock)) {
-                err(EXIT_FAILURE, "Error: pthread_mutex_lock");
-        }
-
         printf("[%s] Building...\n", artifact);
 
-        printf("[%s] > cd %s\n", artifact, bpath);
-        if (chdir(bpath)) {
-                fprintf(stderr, "[%s] Error: chdir %s: %s\n", artifact, bpath, strerror(errno));
-                return 1;
-        }
         printf("[%s] > sh -c '%s'\n", artifact, build);
-        if (cmd_run(build)) {
+        if (cmd_run(build, bpath)) {
                 fprintf(stderr, "[%s] Error: cmd_run %s: %s\n", artifact, build, strerror(errno));
                 return 1;
         }
-        printf("[%s] > cp %s %s\n", artifact, artifact, xname);
-        if (copy(artifact, xname)) {
-                fprintf(stderr, "[%s] Error: copy %s: %s\n", artifact, xname, strerror(errno));
-                return 1;
-        }
-        printf("[%s] > cd %s\n", artifact, cwd);
-        if (chdir(cwd)) {
-                fprintf(stderr, "[%s] Error: chdir %s: %s\n", artifact, cwd, strerror(errno));
+        printf("[%s] > cp %s %s\n", artifact, artifact_src, xname);
+        if (copy(artifact_src, xname)) {
+                fprintf(stderr, "[%s] Error: copy %s %s: %s\n", artifact, artifact_src, xname, strerror(errno));
                 return 1;
         }
 
         printf("[%s] Package built succesfully\n", artifact);
 
-        if (pthread_mutex_unlock(&build_lock)) {
-                err(EXIT_FAILURE, "Error: pthread_mutex_unlock");
-        }
         return 0;
 }
 
@@ -282,7 +265,7 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         char *bname = NULL; // build name: bpath / fname
         char *xpath = NULL; // bin path
         char *xname = NULL; // bin name: xpath / artifact
-        char *cwd = NULL;
+        char *artifact_src = NULL;
         int bfd = -1;
 
         if ((fname = name ? strdup(name) : url_get_filename(url)) == NULL) goto err;
@@ -290,7 +273,7 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         if ((bname = format("%s/%s", bpath, fname)) == NULL) goto err;
         if ((xpath = format("%s", xdir)) == NULL) goto err;
         if ((xname = format("%s/%s", xpath, artifact)) == NULL) goto err;
-        if ((cwd = get_current_dir_name()) == NULL) goto err;
+        if ((artifact_src = format("%s/%s", bpath, artifact)) == NULL) goto err;
 
         if (mkdirp(bpath, 0755)) goto err;
         if (mkdirp(xpath, 0755)) goto err;
@@ -326,7 +309,7 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         }
 
 build:
-        if (build_package(build, artifact, bpath, xname, cwd)) goto err;
+        if (build_package(build, artifact, bpath, artifact_src, xname)) goto err;
         goto exit;
 err:
         status = 1;
@@ -338,7 +321,7 @@ exit:
         if (bname) free(bname);
         if (xpath) free(xpath);
         if (xname) free(xname);
-        if (cwd) free(cwd);
+        if (artifact_src) free(artifact_src);
         return status;
 }
 
@@ -473,6 +456,7 @@ load_config(const char *config_path, int dump_and_exit)
                 if (!(FIELD_LIST 1)) return 1;
 /*           */ #undef FIELD
 
+                t.thr = 0;
                 Da_append(&tasks, t);
         }
 
@@ -481,6 +465,8 @@ load_config(const char *config_path, int dump_and_exit)
                 sem_wait(sem);
                 if (pthread_create(&t->thr, NULL, process_package_wrapper, t)) {
                         perror("pthread_create");
+                        sem_post(sem);
+                        goto err;
                 }
         }
 
@@ -493,6 +479,7 @@ load_config(const char *config_path, int dump_and_exit)
 
         Da_destroy(&tasks);
 
+err:
 exit:
         if (Conf_close(conf)) return 1;
         return 0;
@@ -527,6 +514,8 @@ main(int argc, char **argv)
                 return 0;
         }
 
+        curl_global_init(CURL_GLOBAL_ALL);
+
         threads_number = nthreads ? atoi(nthreads) : nproc();
         if (threads_number <= 0) {
                 errx(EXIT_FAILURE, "Threads number can not be 0 or less");
@@ -554,15 +543,12 @@ main(int argc, char **argv)
                 printf("New config file: %s\n", file);
         }
 
-        pthread_mutex_init(&build_lock, NULL);
-
         if (load_config(file, dump_and_exit != 0)) {
                 printf("Error loading config file %s\n", file);
         }
-
-        pthread_mutex_destroy(&build_lock);
         free(file);
         flag_free();
+        curl_global_cleanup();
         sem_destroy(sem);
         return 0;
 }
