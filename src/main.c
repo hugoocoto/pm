@@ -52,7 +52,7 @@ typedef struct Task {
 
 int threads_number = 0;
 sem_t *sem = NULL;
-pthread_mutex_t build_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t build_lock;
 
 int
 nproc()
@@ -101,7 +101,7 @@ download(const char *url, const char *path)
 
         curl_easy_setopt(curl, CURLOPT_URL, url);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);             /* follow redirects */
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);                 /* disable progress var if verbose is not set */
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);                 /* disable progress var if 1 */
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _download_write); /* send all data to the write callback */
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
 
@@ -283,12 +283,12 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         char *xpath = NULL; // bin path
         char *xname = NULL; // bin name: xpath / artifact
         char *cwd = NULL;
-        int bfd = -1, xfd = -1;
+        int bfd = -1;
 
         if ((fname = name ? strdup(name) : url_get_filename(url)) == NULL) goto err;
         if ((bpath = format("%s/%s", bdir, fname)) == NULL) goto err;
         if ((bname = format("%s/%s", bpath, fname)) == NULL) goto err;
-        if ((xpath = format("%s/%s", xdir, fname)) == NULL) goto err;
+        if ((xpath = format("%s", xdir)) == NULL) goto err;
         if ((xname = format("%s/%s", xpath, artifact)) == NULL) goto err;
         if ((cwd = get_current_dir_name()) == NULL) goto err;
 
@@ -296,11 +296,11 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         if (mkdirp(xpath, 0755)) goto err;
 
         if ((bfd = dir_lock_acquire(bpath)) < 0) goto err;
-        if ((xfd = dir_lock_acquire(xpath)) < 0) goto err;
 
         if (!file_exists(bname)) {
                 printf("[%s] File not found. Downloading...\n", artifact);
                 if (download(url, bname)) goto err;
+                printf("[%s] File downloaded successfully\n", artifact);
                 goto build;
         }
 
@@ -333,7 +333,6 @@ err:
         printf("[%s] Error: Package not installed\n", artifact);
 exit:
         if (bfd >= 0) dir_lock_release(bfd);
-        if (xfd >= 0) dir_lock_release(xfd);
         if (fname) free(fname);
         if (bpath) free(bpath);
         if (bname) free(bname);
@@ -555,10 +554,13 @@ main(int argc, char **argv)
                 printf("New config file: %s\n", file);
         }
 
+        pthread_mutex_init(&build_lock, NULL);
+
         if (load_config(file, dump_and_exit != 0)) {
                 printf("Error loading config file %s\n", file);
         }
 
+        pthread_mutex_destroy(&build_lock);
         free(file);
         flag_free();
         sem_destroy(sem);
