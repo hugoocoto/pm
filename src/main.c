@@ -439,7 +439,7 @@ load_config(const char *config_path, int dump_and_exit)
 /*           */ #define FIELD(x, ...) t.x == NULL &&
                 if (FIELD_LIST 1) {
                         printf("  Empty. Skipping...\n");
-                        return 0;
+			continue;
                 } // all the fields are null - empty package
 /*           */ #undef FIELD
 
