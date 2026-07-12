@@ -243,24 +243,46 @@ url_get_filename(const char *url)
 int
 build_package(const char *build, const char *artifact, const char *bpath, const char *artifact_src, const char *xname, const char *bname)
 {
+        int status = 0;
+        char *tmp_xname = format("%s.pm-tmpcpy", xname);
+        assert(tmp_xname);
+
         printf("[%s] Building...\n", artifact);
 
         printf("[%s] > sh -c '%s'\n", artifact, build);
         if (cmd_run(build, bpath)) {
                 fprintf(stderr, "[%s] Error: cmd_run %s: %s\n", artifact, build, strerror(errno));
                 fprintf(stderr, "[%s] Removing corrupted cached file: %s\n", artifact, bname);
-                remove(bname);
-                return 1;
+                remove(bname); // if not built succesfully, remove source and
+                               // download it again in next run
+                goto err;
         }
+
         printf("[%s] > cp %s %s\n", artifact, artifact_src, xname);
-        if (copy(artifact_src, xname)) {
-                fprintf(stderr, "[%s] Error: copy %s %s: %s\n", artifact, artifact_src, xname, strerror(errno));
+        if (copy(artifact_src, tmp_xname)) {
+                fprintf(stderr, "[%s] Error: copy %s %s: %s\n", artifact, artifact_src, tmp_xname, strerror(errno));
+                goto err;
+        }
+
+        // If the file exists, it's better to copy it somwhere else and then
+        // rename the files, this way we are writing two different files and
+        // just changing the inode. If we wrote directly to xname, it can be
+        // corrupted (loosing the original copy) or it can not be written if the
+        // file is busy (running). I don't check if the file exists, I did it
+        // always.
+        if (rename(tmp_xname, xname)) {
+                fprintf(stderr, "[%s] Error: rename %s %s: %s\n", artifact, tmp_xname, xname, strerror(errno));
+                free(tmp_xname);
                 return 1;
         }
 
         printf("[%s] Package built succesfully\n", artifact);
-
-        return 0;
+        goto exit;
+err:
+        status = 1;
+exit:
+        free(tmp_xname);
+        return status;
 }
 
 int
