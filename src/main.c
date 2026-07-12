@@ -369,14 +369,10 @@ dump_config(const char *file)
         $("-- Add ~/.config/pm/ to the path");
         $("package.path = package.path .. \";\" .. os.getenv(\"HOME\") .. \"/.config/pm/?.lua\"");
         $("");
-        $("-- Build path");
-        $("Build = {");
-        $("    path = os.getenv(\"HOME\") .. \"/.local/share/pm/cache/\"");
-        $("}");
-        $("");
-        $("-- Bin path");
-        $("Bin = {");
-        $("    path = os.getenv(\"HOME\") .. \"/.local/share/pm/bin/\"");
+        $("-- System configuration");
+        $("System = {");
+        $("    build = { path = os.getenv(\"HOME\") .. \"/.local/share/pm/cache/\" }, -- Build path");
+        $("    bin = { path = os.getenv(\"HOME\") .. \"/.local/share/pm/bin/\" },     -- Bin path");
         $("}");
         $("");
         $("--[[");
@@ -428,12 +424,12 @@ load_config(const char *config_path, int dump_and_exit, int list_and_exit)
                 err(EXIT_FAILURE, "Can not open file %s", config_path);
         }
 
-        if (Conf_get_str(conf, &build_path, "Build.path")) {
-                errx(EXIT_FAILURE, "Error: field `Build = { path = \"\" }` is required. (In %s)", config_path);
+        if (Conf_get_str(conf, &build_path, "System.build.path")) {
+                errx(EXIT_FAILURE, "Error: field `System = { build = { path = \"\" }}` is required. (In %s)", config_path);
         }
 
-        if (Conf_get_str(conf, &bin_path, "Bin.path")) {
-                errx(EXIT_FAILURE, "Error: field `Bin = { path = \"\" }` is required. (In %s)", config_path);
+        if (Conf_get_str(conf, &bin_path, "System.bin.path")) {
+                errx(EXIT_FAILURE, "Error: field `System = { bin = { path = \"\" }}` is required. (In %s)", config_path);
         }
 
         if (mkdirp(build_path, 0755)) err(EXIT_FAILURE, "mkdir %s", build_path);
@@ -550,7 +546,7 @@ main(int argc, char **argv)
         }
 
         if (version) {
-                printf("pm version v0.1 (%s %s)\n", __DATE__, __TIME__);
+                printf("pm version v0.2 (%s %s)\n", __DATE__, __TIME__);
                 printf("Copyright (C) 2026 Hugo Coto\n");
                 printf("This is free software: you are free to change and redistribute it.\n");
                 printf("There is NO WARRANTY, to the extent permitted by law.\n");

@@ -10,6 +10,8 @@ RM = rm -rf
 DEBUG_FLAGS = -O0 -Wall -Wextra -ggdb -fsanitize=address,null,undefined
 RELEASE_FLAGS = -O2 -Wall -Wextra
 
+all: release $(MANDIR)/pm.1
+
 release: FLAGS = $(BASE_FLAGS) $(RELEASE_FLAGS)
 release: $(OUT)
 
@@ -25,6 +27,8 @@ clean:
 cleanall:
 	$(RM) $(OUT) ~/.local/share/pm ~/.local/bin/pm ~/.local/state/pm .cache
 
-install: pm.1
+install: $(MANDIR)/pm.1
+
+$(MANDIR)/pm.1: pm.1
 	mkdir -p $(MANDIR)
 	cp pm.1 $(MANDIR)/pm.1

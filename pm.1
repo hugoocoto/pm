@@ -1,9 +1,9 @@
-.TH PM 1 "July 2026" "pm v0.1" "User Commands"
+.TH PM 1 "July 2026" "pm v0.2" "User Commands"
 .SH NAME
-pm \- personal package manager
+pm \- Hugo's own package manager. Simple. Multithread. Written in C.
 .SH SYNOPSIS
 .B pm
-[\fB\-h\fR] [\fB\-v\fR]
+[\fB\-h\fR|\fB\-\-help\fR] [\fB\-v\fR|\fB\-\-version\fR]
 [\fBi\fR|\fBinit\fR]
 [\fBt\fR|\fBthreads\fR \fITHREADS\fR]
 [\fBl\fR|\fBlist\fR]
@@ -57,7 +57,11 @@ The configuration file is a Lua script located at
 .IR ~/.config/pm/init.lua .
 It must define the following global tables:
 .TP
-.B Build
+.B System
+A table with two sub-tables:
+.RS
+.TP
+.B build
 A table with a single field:
 .RS
 .TP
@@ -67,7 +71,7 @@ Default:
 .IR ~/.local/share/pm/cache/ .
 .RE
 .TP
-.B Bin
+.B bin
 A table with a single field:
 .RS
 .TP
@@ -75,6 +79,7 @@ A table with a single field:
 Directory where built executables are installed.
 Default:
 .IR ~/.local/share/pm/bin/ .
+.RE
 .RE
 .TP
 .B Packages
@@ -93,7 +98,9 @@ filename is extracted from the URL.
 produces the artifact.
 .TP
 .B artifact
-(Required) Name of the executable produced by the build script.
+(Required, unless
+.B name
+is set) Name of the executable produced by the build script.
 If omitted, falls back to the value of
 .BR name .
 .TP
@@ -106,6 +113,12 @@ the remote file. The output must match the HTTP-date format
 If the configuration file does not exist, run
 .B pm init
 to create a template.
+.PP
+The file is plain Lua, so you can use
+.BR require ,
+helper functions, and other Lua constructs to organize your
+packages across multiple files. See the example directory for
+reference.
 .SH FILES
 .TP
 .I ~/.config/pm/init.lua
