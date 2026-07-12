@@ -1,4 +1,4 @@
--- Github_make: fetch and build a GitHub repo archive.
+-- Github: fetch and build a GitHub repo archive.
 --
 -- To avoid GitHub API rate limiting (60 req/hr unauthenticated),
 -- authenticate via the GitHub CLI:
@@ -22,14 +22,18 @@ end
 local _gh_token = gh_token()
 local _auth_flag = _gh_token ~= "" and "-H 'Authorization: token " .. _gh_token .. "'" or ""
 
-function Github_make(user, repo, branch, artifact)
+function Github(opts)
+    local branch = opts.branch or "main"
+    local repo = opts.repo
+    local extract = repo .. "-" .. branch
+
     return {
-        url = "https://github.com/" .. user .. "/" .. repo .. "/archive/refs/heads/" .. branch .. ".tar.gz",
-        name = repo .. ".tar.gz",
-        last_modified_cmd = "curl -s " ..
-        _auth_flag ..
-        " https://api.github.com/repos/" .. user .. "/" .. repo .. "/commits/" .. branch .. " -I | grep -i last-modified",
-        build = "tar xzf " .. repo .. ".tar.gz && cp -fr " .. repo .. "-" .. branch .. "/* . && make",
-        artifact = artifact,
+        url               = opts.url or
+            ("https://github.com/" .. opts.user .. "/" .. repo .. "/archive/refs/heads/" .. branch .. ".tar.gz"),
+        name              = opts.name or (repo .. ".tar.gz"),
+        last_modified_cmd = opts.last_modified_cmd or
+            ("curl -s " .. _auth_flag .. " https://api.github.com/repos/" .. opts.user .. "/" .. repo .. "/commits/" .. branch .. " -I | grep -i last-modified"),
+        build             = "tar xzf " .. repo .. ".tar.gz && cp -fr " .. extract .. "/* . && " .. (opts.cmd or "make"),
+        artifact          = opts.artifact or repo,
     }
 end

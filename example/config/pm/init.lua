@@ -30,8 +30,8 @@ Packages = {
     },
     require 'nvim',
 
-    Github_make("hugoocoto", "dv", "main", "dv"),
-    Github_make("hugoocoto", "todo", "main", "todo"),
-    Github_make("hugoocoto", "vicel", "main", "vicel"),
-    Github_make("hugoocoto", "fetch", "main", "fetch"),
+    Github { user = "hugoocoto", repo = "dv" },
+    Github { user = "hugoocoto", repo = "todo" },
+    Github { user = "hugoocoto", repo = "vicel" },
+    Github { user = "hugoocoto", repo = "fetch" },
 }
