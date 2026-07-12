@@ -106,6 +106,14 @@ download(const char *url, const char *path)
 
         if ((result = curl_easy_perform(curl)) != CURLE_OK) goto err;
 
+        long http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        if (http_code >= 400) {
+                fprintf(stderr, "Download failed: HTTP %ld from %s\n", http_code, url);
+                result = CURLE_HTTP_RETURNED_ERROR;
+                goto err;
+        }
+
 err:
         if (curl) curl_easy_cleanup(curl);
         if (f) fclose(f);
@@ -233,13 +241,15 @@ url_get_filename(const char *url)
 }
 
 int
-build_package(const char *build, const char *artifact, const char *bpath, const char *artifact_src, const char *xname)
+build_package(const char *build, const char *artifact, const char *bpath, const char *artifact_src, const char *xname, const char *bname)
 {
         printf("[%s] Building...\n", artifact);
 
         printf("[%s] > sh -c '%s'\n", artifact, build);
         if (cmd_run(build, bpath)) {
                 fprintf(stderr, "[%s] Error: cmd_run %s: %s\n", artifact, build, strerror(errno));
+                fprintf(stderr, "[%s] Removing corrupted cached file: %s\n", artifact, bname);
+                remove(bname);
                 return 1;
         }
         printf("[%s] > cp %s %s\n", artifact, artifact_src, xname);
@@ -309,7 +319,7 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         }
 
 build:
-        if (build_package(build, artifact, bpath, artifact_src, xname)) goto err;
+        if (build_package(build, artifact, bpath, artifact_src, xname, bname)) goto err;
         goto exit;
 err:
         status = 1;
@@ -385,7 +395,7 @@ process_package_wrapper(void *arg)
 }
 
 int
-load_config(const char *config_path, int dump_and_exit)
+load_config(const char *config_path, int dump_and_exit, int list_and_exit)
 {
         const char *build_path = NULL; // build path (Lua Build.path)
         const char *bin_path = NULL;   // bin path (Lua Bin.path)
@@ -439,7 +449,7 @@ load_config(const char *config_path, int dump_and_exit)
 /*           */ #define FIELD(x, ...) t.x == NULL &&
                 if (FIELD_LIST 1) {
                         printf("  Empty. Skipping...\n");
-			continue;
+                        continue;
                 } // all the fields are null - empty package
 /*           */ #undef FIELD
 
@@ -458,6 +468,15 @@ load_config(const char *config_path, int dump_and_exit)
 
                 t.thr = 0;
                 Da_append(&tasks, t);
+        }
+
+        if (list_and_exit) {
+                printf("Packages:\n");
+                Da_foreach(t, tasks)
+                {
+                        printf("  %s  (%s)\n", t->artifact, t->url);
+                }
+                return 0;
         }
 
         Da_foreach(t, tasks)
@@ -490,6 +509,7 @@ main(int argc, char **argv)
 {
         const char *init_config;
         const char *dump_and_exit;
+        const char *list_and_exit;
         const char *nthreads;
         const char *home;
         const char *version;
@@ -500,6 +520,7 @@ main(int argc, char **argv)
         flag_add(&init_config, "i", "init", .help = "Create init.lua");
         flag_add(&nthreads, "t", "threads", .help = "Use T threads", .nargs = 1);
         flag_add(&dump_and_exit, "s", "system", .help = "Show system configuration");
+        flag_add(&list_and_exit, "l", "list", .help = "List packages in config");
 
         if (flag_parse(&argc, &argv) || argc > 1) {
                 flag_show_help(STDOUT_FILENO);
@@ -543,7 +564,7 @@ main(int argc, char **argv)
                 printf("New config file: %s\n", file);
         }
 
-        if (load_config(file, dump_and_exit != 0)) {
+        if (load_config(file, dump_and_exit != 0, list_and_exit != 0)) {
                 printf("Error loading config file %s\n", file);
         }
         free(file);

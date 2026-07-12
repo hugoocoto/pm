@@ -6,6 +6,7 @@ pm \- personal package manager
 [\fB\-h\fR] [\fB\-v\fR]
 [\fBi\fR|\fBinit\fR]
 [\fBt\fR|\fBthreads\fR \fITHREADS\fR]
+[\fBl\fR|\fBlist\fR]
 [\fBs\fR|\fBsystem\fR]
 .SH DESCRIPTION
 .B pm
@@ -44,6 +45,9 @@ Use at most
 .I THREADS
 parallel threads when building packages. If not specified, the number
 of online CPU cores is used.
+.TP
+\fBl\fR, \fBlist\fR
+List all packages along with their origin URL. They don't have to be installed.
 .TP
 \fBs\fR, \fBsystem\fR
 Print the current system configuration: config file path, build cache
