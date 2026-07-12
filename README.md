@@ -1,6 +1,6 @@
 # pm
 
-This is another package manager that reads a Lua configuration file and
+Hugo's new (again) package manager that reads a Lua configuration file and
 coordinates the download, build, and installation from remote URLs. Packages are
 processed in parallel using POSIX threads.
 
