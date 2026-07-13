@@ -2,7 +2,7 @@ SRC = $(wildcard src/*.c)
 HEADERS = $(wildcard src/*.h)
 OUT = pm
 MANDIR ?= $(HOME)/.local/share/man/man1
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+VERSION := $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null)
 ifeq ($(VERSION),)
 VERSION := v$(shell cat VERSION 2>/dev/null || echo unknown)
 endif

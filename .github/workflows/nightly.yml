@@ -47,6 +47,8 @@ jobs:
           VERSION=$(./pm --version 2>&1 | head -1 | sed 's/.*version //; s/ (.*//')
           git tag -f nightly HEAD
           git push origin nightly --force
+          git tag -f v0.3-nightly HEAD
+          git push origin v0.3-nightly --force
           gh release delete nightly --yes --repo ${{ github.repository }} 2>/dev/null || true
           gh release create nightly "pm-${ARCH}.AppImage" pm.tar.gz \
             --title "Nightly build $VERSION" \
