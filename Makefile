@@ -6,8 +6,10 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
 ifeq ($(VERSION),)
 VERSION := v$(shell cat VERSION 2>/dev/null || echo unknown)
 endif
-BASE_FLAGS = $(LIBS) -std=c99 -DVERSION='"$(VERSION)"'
-LIBS = -llua -lcrypto -lcurl
+LUA_CFLAGS = $(shell pkg-config --cflags lua 2>/dev/null || pkg-config --cflags lua5.4 2>/dev/null)
+LUA_LIBS = $(shell pkg-config --libs lua 2>/dev/null || pkg-config --libs lua5.4 2>/dev/null || echo '-llua')
+LIBS = $(LUA_LIBS) -lcrypto -lcurl
+BASE_FLAGS = $(LUA_CFLAGS) $(LIBS) -std=c99 -DVERSION='"$(VERSION)"'
 CC = clang
 RM = rm -rf
 
