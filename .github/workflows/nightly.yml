@@ -15,7 +15,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y liblua5.5-dev libcurl4-openssl-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y liblua5.4-dev libcurl4-openssl-dev libssl-dev
 
       - name: Build
         run: make release
