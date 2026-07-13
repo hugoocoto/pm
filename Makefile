@@ -27,6 +27,9 @@ debug: $(OUT)
 $(OUT): $(SRC) $(HEADERS)
 	$(CC) $(FLAGS) $(SRC) -o $@
 
+appimage: release
+	cp $(OUT) AppDir/usr/bin/pm
+
 clean:
 	$(RM) $(OUT)
 

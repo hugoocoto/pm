@@ -23,20 +23,8 @@ jobs:
 
       - name: Build AppImage
         run: |
+          make appimage
           ARCH=$(uname -m)
-          mkdir -p AppDir/usr/bin
-          cp pm AppDir/usr/bin/
-          ln -s usr/bin/pm AppDir/AppRun
-          cat > AppDir/pm.desktop << 'EOF'
-          [Desktop Entry]
-          Name=pm
-          Exec=pm
-          Icon=pm
-          Type=Application
-          Terminal=true
-          Categories=Utility;
-          EOF
-          cp pm.png AppDir/
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${ARCH}.AppImage
           chmod +x linuxdeploy-${ARCH}.AppImage
           ./linuxdeploy-${ARCH}.AppImage --appimage-extract

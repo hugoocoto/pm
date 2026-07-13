@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=pm
+Exec=pm
+Icon=pm
+Type=Application
+Terminal=true
+Categories=Utility;
