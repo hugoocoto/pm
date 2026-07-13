@@ -563,12 +563,12 @@ main(int argc, char **argv)
 
         flag_program(.help = NULL); // unused. Just to suppress the unused warning
         flag_add(&show_version, "--version", "-v", .help = "Show version");
+        flag_add(&use_colors, "--color", .help = "Use colors");
         flag_add(&init_config, "i", "init", .help = "Create init.lua");
         flag_add(&num_of_threads_str, "t", "threads", .help = "Use T threads", .nargs = 1);
         flag_add(&dump_and_exit, "s", "system", .help = "Show system configuration");
         flag_add(&list_and_exit, "l", "list", .help = "List packages in config");
         flag_add(&config_file, "c", "config", .help = "Change config file", .defaults = default_config_file, .nargs = 1);
-        flag_add(&use_colors, "--color", .help = "Use colors");
 
         if (flag_parse(&argc, &argv) || argc > 1) {
                 flag_show_help(STDOUT_FILENO);
