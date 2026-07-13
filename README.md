@@ -12,7 +12,7 @@ know either. Update: appart from the rest, this one works.
 
 `pm [option]...`
 
-- **Install/Update**: `pm`. Just like that. Simple. Elegant. And it works.
+- **Update your pacages**: `pm`. Just like that. Simple. Elegant. And it works.
 
 | Command              | Description                                              |
 |----------------------|----------------------------------------------------------|
