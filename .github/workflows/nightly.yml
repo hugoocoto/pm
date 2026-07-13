@@ -10,7 +10,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y liblua-dev libcurl4-openssl-dev libssl-dev
+
+      - name: Build
+        run: make release
 
       - name: Build source tarball
         run: git archive --format=tar.gz --output=pm.tar.gz HEAD
@@ -19,9 +27,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION=$(./pm --version 2>&1 | head -1 | sed 's/.*version //; s/ (.*//')
           gh release view nightly --repo ${{ github.repository }} &>/dev/null \
-            && gh release upload nightly pm.tar.gz --clobber --repo ${{ github.repository }} \
-            || gh release create nightly pm.tar.gz \
-              --title "Nightly build" \
-              --notes "Automated nightly release from ${{ github.sha }}" \
+            && gh release upload nightly pm pm.tar.gz --clobber --repo ${{ github.repository }} \
+            || gh release create nightly pm pm.tar.gz \
+              --title "Nightly build $VERSION" \
+              --notes "Built from ${{ github.sha }}" \
               --repo ${{ github.repository }}

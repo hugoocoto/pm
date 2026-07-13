@@ -34,6 +34,10 @@
 #include "flag.h"
 #include "fmt_print.h"
 
+#ifndef VERSION
+#define VERSION "unknown"
+#endif
+
 // The fields that can be used in each package
 #define FIELD_LIST                                                                    \
         FIELD(url, true, "url to the file")                                           \
@@ -576,7 +580,7 @@ main(int argc, char **argv)
         }
 
         if (show_version) {
-                Info("pm version v0.3 (%s %s)", __DATE__, __TIME__);
+                Info("pm version %s (%s %s)", VERSION, __DATE__, __TIME__);
                 Info("Copyright (C) 2026 Hugo Coto");
                 Info("This is free software: you are free to change and redistribute it.");
                 Info("There is NO WARRANTY, to the extent permitted by law.");
