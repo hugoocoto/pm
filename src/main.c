@@ -389,7 +389,7 @@ dump_config(const char *file)
         $("Packages = {");
         $("    {");
         $("        -- pm bootstraping. Keep pm updated.");
-        $("        url = \"https://github.com/hugoocoto/pm/releases/download/nightly/pm-linux-x86_64\",");
+        $("        url = \"https://github.com/hugoocoto/pm/releases/download/nightly/pm-x86_64.AppImage\",");
         $("        build = \"chmod +x pm\",");
         $("        name = \"pm\",");
         $("    },");

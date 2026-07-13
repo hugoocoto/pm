@@ -26,6 +26,7 @@ jobs:
           ARCH=$(uname -m)
           mkdir -p AppDir/usr/bin
           cp pm AppDir/usr/bin/
+          ln -s usr/bin/pm AppDir/AppRun
           cat > AppDir/pm.desktop << 'EOF'
           [Desktop Entry]
           Name=pm
