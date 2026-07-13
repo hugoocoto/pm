@@ -580,7 +580,8 @@ main(int argc, char **argv)
         }
 
         if (show_version) {
-                Info("pm version %s (%s %s)", VERSION, __DATE__, __TIME__);
+		// NOTE: changing this format will break version parsing in .github/workflows/nightly.yml
+		Info("pm version %s (%s %s)", VERSION, __DATE__, __TIME__);
                 Info("Copyright (C) 2026 Hugo Coto");
                 Info("This is free software: you are free to change and redistribute it.");
                 Info("There is NO WARRANTY, to the extent permitted by law.");

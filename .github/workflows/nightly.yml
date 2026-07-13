@@ -3,6 +3,7 @@ name: Nightly Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   nightly:
@@ -28,9 +29,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(./pm --version 2>&1 | head -1 | sed 's/.*version //; s/ (.*//')
-          gh release view nightly --repo ${{ github.repository }} &>/dev/null \
-            && gh release upload nightly pm pm.tar.gz --clobber --repo ${{ github.repository }} \
-            || gh release create nightly pm pm.tar.gz \
-              --title "Nightly build $VERSION" \
-              --notes "Built from ${{ github.sha }}" \
-              --repo ${{ github.repository }}
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          ARCH=$(uname -m)
+          mv pm "pm-${OS}-${ARCH}"
+          gh release delete nightly --yes --repo ${{ github.repository }} 2>/dev/null || true
+          gh release create nightly "pm-${OS}-${ARCH}" pm.tar.gz \
+            --title "Nightly build $VERSION" \
+            --notes "Built from ${{ github.sha }}" \
+            --repo ${{ github.repository }}
