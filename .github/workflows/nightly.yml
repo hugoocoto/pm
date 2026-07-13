@@ -19,7 +19,32 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y liblua5.4-dev libcurl4-openssl-dev libssl-dev
 
       - name: Build
-        run: make release STATIC_LUA=1
+        run: make release
+
+      - name: Build AppImage
+        run: |
+          ARCH=$(uname -m)
+          mkdir -p AppDir/usr/bin
+          cp pm AppDir/usr/bin/
+          cat > AppDir/pm.desktop << 'EOF'
+          [Desktop Entry]
+          Name=pm
+          Exec=pm
+          Type=Application
+          Terminal=true
+          Categories=Utility;
+          EOF
+          cp pm.png AppDir/
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${ARCH}.AppImage
+          chmod +x linuxdeploy-${ARCH}.AppImage
+          ./linuxdeploy-${ARCH}.AppImage --appimage-extract
+          mv squashfs-root linuxdeploy
+          ARCH=${ARCH} ./linuxdeploy/AppRun --appdir AppDir
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${ARCH}.AppImage
+          chmod +x appimagetool-${ARCH}.AppImage
+          ./appimagetool-${ARCH}.AppImage --appimage-extract
+          mv squashfs-root appimagetool
+          ARCH=${ARCH} ./appimagetool/AppRun AppDir pm-${ARCH}.AppImage
 
       - name: Build source tarball
         run: git archive --format=tar.gz --output=pm.tar.gz HEAD
@@ -28,14 +53,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION=$(./pm --version 2>&1 | head -1 | sed 's/.*version //; s/ (.*//')
-          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
           ARCH=$(uname -m)
-          mv pm "pm-${OS}-${ARCH}"
+          VERSION=$(./pm --version 2>&1 | head -1 | sed 's/.*version //; s/ (.*//')
           git tag -f nightly HEAD
           git push origin nightly --force
           gh release delete nightly --yes --repo ${{ github.repository }} 2>/dev/null || true
-          gh release create nightly "pm-${OS}-${ARCH}" pm.tar.gz \
+          gh release create nightly "pm-${ARCH}.AppImage" pm.tar.gz \
             --title "Nightly build $VERSION" \
             --notes "Built from ${{ github.sha }}" \
             --repo ${{ github.repository }}
