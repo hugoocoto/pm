@@ -8,8 +8,9 @@ VERSION := v$(shell cat VERSION 2>/dev/null || echo unknown)
 endif
 LUA_CFLAGS = $(shell pkg-config --cflags lua 2>/dev/null || pkg-config --cflags lua5.4 2>/dev/null)
 ifdef STATIC_LUA
+  LUA_LDFLAGS := $(shell pkg-config --libs-only-L lua 2>/dev/null || pkg-config --libs-only-L lua5.4 2>/dev/null)
   LUA_LIBNAME := $(shell pkg-config --libs-only-l lua 2>/dev/null | grep -oE '\-llua\S*' || pkg-config --libs-only-l lua5.4 2>/dev/null | grep -oE '\-llua\S*' || echo '-llua')
-  LUA_LIBS = -Wl,-Bstatic $(LUA_LIBNAME) -Wl,-Bdynamic -lm
+  LUA_LIBS = $(LUA_LDFLAGS) $(patsubst -l%,-l:lib%.a,$(LUA_LIBNAME)) -lm
 else
   LUA_LIBS = $(shell pkg-config --libs lua 2>/dev/null || pkg-config --libs lua5.4 2>/dev/null || echo '-llua')
 endif
