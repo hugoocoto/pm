@@ -389,9 +389,9 @@ dump_config(const char *file)
         $("Packages = {");
         $("    {");
         $("        -- pm bootstraping. Keep pm updated.");
-        $("        url = \"https://github.com/hugoocoto/pm/releases/download/nightly/pm.tar.gz\",");
-        $("        build = \"tar -xzf pm.tar.gz && make\",");
-        $("        artifact = \"pm\",");
+        $("        url = \"https://github.com/hugoocoto/pm/releases/download/nightly/pm-linux-x86_64\",");
+        $("        build = \"chmod +x pm\",");
+        $("        name = \"pm\",");
         $("    },");
         $("}");
 #undef $
