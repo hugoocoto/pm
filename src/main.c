@@ -12,6 +12,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <semaphore.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -31,9 +32,9 @@
 
 #include "cum.h"
 #include "flag.h"
+#include "fmt_print.h"
 
 // The fields that can be used in each package
-// (name, required?, description)
 #define FIELD_LIST                                                                    \
         FIELD(url, true, "url to the file")                                           \
         FIELD(name, false, "name of the file downloaded from url")                    \
@@ -50,8 +51,10 @@ typedef struct Task {
         pthread_t thr;
 } Task;
 
-int threads_number = 0;
-sem_t *sem = NULL;
+int num_of_threads           = 0;
+sem_t *max_threads_limit_sem = NULL;
+int fmt_loffset              = 0;
+int fmt_colorize             = false;
 
 int
 nproc()
@@ -77,26 +80,30 @@ format(const char *fmt, ...)
         return buf;
 }
 
+char *
+str_dup(const char *str)
+{
+        char *mem = malloc(strlen(str) + 1);
+        assert(mem);
+        return memcpy(mem, str, strlen(str) + 1);
+}
+
 size_t
 _download_write(char *ptr, size_t size, size_t nmemb, void *stream)
 {
-        size_t n = fwrite(ptr, size, nmemb, (FILE *) stream);
-        return n * size;
+        return fwrite(ptr, size, nmemb, (FILE *) stream) * size;
 }
 
 int
 download(const char *url, const char *path)
 {
         CURLcode result = !CURLE_OK;
-        CURL *curl = NULL;
-        FILE *f = NULL;
+        CURL *curl      = NULL;
+        FILE *f         = NULL;
+        long http_code  = 0;
 
-        if ((f = fopen(path, "wb")) == NULL) {
-                perror(path);
-                goto err;
-        }
-
-        if ((curl = curl_easy_init()) == NULL) goto err;
+        if ((f = fopen(path, "wb")) == NULL) goto_err(err, "fopen %s", path);
+        if ((curl = curl_easy_init()) == NULL) goto_err_x(err, "curl init");
 
         curl_easy_setopt(curl, CURLOPT_URL, url);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);             /* follow redirects */
@@ -104,14 +111,12 @@ download(const char *url, const char *path)
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _download_write); /* send all data to the write callback */
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
 
-        if ((result = curl_easy_perform(curl)) != CURLE_OK) goto err;
+        if ((result = curl_easy_perform(curl)) != CURLE_OK) goto_err_x(err, "curl perform");
 
-        long http_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
         if (http_code >= 400) {
-                fprintf(stderr, "Download failed: HTTP %ld from %s\n", http_code, url);
                 result = CURLE_HTTP_RETURNED_ERROR;
-                goto err;
+                goto_err_x(err, "Download failed: HTTP %ld from %s", http_code, url);
         }
 
 err:
@@ -128,14 +133,14 @@ cmd_run(const char *cmd, const char *root_path)
         switch (pid) {
         case -1:
                 perror("fork");
-                return -1;
+                return 1;
         case 0:
                 if (chdir(root_path)) err(EXIT_FAILURE, "cd %s", root_path);
                 execlp("sh", "sh", "-c", cmd, NULL);
                 err(EXIT_FAILURE, "sh -c %s", cmd);
         default:
                 if (waitpid(pid, &status, 0) == -1) {
-                        perror("waitpid");
+                        perror("Error: waitpid");
                         return -1;
                 }
                 return status;
@@ -145,13 +150,13 @@ cmd_run(const char *cmd, const char *root_path)
 char *
 cmd_run_and_get(const char *cmd)
 {
-        char t[4096] = "";
-        int status = 0;
+        char t[4096]  = "";
+        int status    = 0;
         FILE *const p = popen(cmd, "r");
 
         if (p) fgets(t, sizeof t - 1, p);
         if (p) status |= pclose(p);
-        return status == 0 && t[0] ? strdup(t) : NULL;
+        return status == 0 && t[0] ? str_dup(t) : NULL;
 }
 
 int
@@ -159,28 +164,28 @@ dir_lock_acquire(const char *dir)
 {
         int fd = open(dir, O_RDONLY | O_DIRECTORY);
         if (fd < 0) {
-                perror("dir_lock_acquire open");
-                return -1;
+                goto_err(err, "dir_lock_acquire open");
         }
         if (flock(fd, LOCK_EX)) {
-                perror("dir_lock_acquire flock");
-                close(fd);
-                return -1;
+                goto_err(err, "dir_lock_acquire flock");
         }
         return fd;
+err:
+        if (fd >= 0) close(fd);
+        return -1;
 }
 
 int
 dir_lock_release(int fd)
 {
-        if (fd < 0) return 0;
         if (flock(fd, LOCK_UN)) {
-                perror("dir_lock_release flock");
-                close(fd);
-                return 1;
+                goto_err(err, "dir_lock_release flock");
         }
         close(fd);
         return 0;
+err:
+        if (fd >= 0) close(fd);
+        return 1;
 }
 
 time_t
@@ -188,17 +193,16 @@ url_file_get_modification_time(const char *url, const char *custom_cmd, int cust
 {
         struct tm tm = { 0 };
         char weekday[4], month_str[4];
-        assert(url);
         char *buf = NULL;
         int offset;
         char *cmd;
 
         if (custom_cmd) {
-                buf = cmd_run_and_get(custom_cmd);
+                buf    = cmd_run_and_get(custom_cmd);
                 offset = custom_cmd_prefix_len;
         }
         if (!buf) {
-                buf = cmd_run_and_get(cmd = format("curl -sIL %s | grep -i last-modified", url));
+                buf    = cmd_run_and_get(cmd = format("curl -sIL %s | grep -i last-modified", url));
                 offset = strlen("last-modified: ");
                 free(cmd);
         }
@@ -207,7 +211,7 @@ url_file_get_modification_time(const char *url, const char *custom_cmd, int cust
         if (sscanf(buf + offset, "%3s, %d %3s %d %d:%d:%d GMT",
                    weekday, &tm.tm_mday, month_str, &tm.tm_year,
                    &tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 7) {
-                goto err;
+                goto_err_x(err, "Failed to parse modification time `%s`", buf + offset);
         }
         tm.tm_year -= 1900;
 
@@ -221,7 +225,9 @@ url_file_get_modification_time(const char *url, const char *custom_cmd, int cust
                         break;
                 }
         }
-        if (tm.tm_mon == -1) goto err;
+        if (tm.tm_mon == -1) {
+                goto_err_x(err, "Can't parse month from date `%s`", buf + offset);
+        }
 
         if (buf) free(buf);
         return timegm(&tm);
@@ -237,31 +243,29 @@ url_get_filename(const char *url)
         const char *c = strrchr(url, '/');
         if (c == NULL) return NULL; // no '/' in the url
         if (c[1] == 0) return NULL; // url ends with '/' -> no filename
-        return strdup(c + 1);
+        return str_dup(c + 1);
 }
 
 int
 build_package(const char *build, const char *artifact, const char *bpath, const char *artifact_src, const char *xname, const char *bname)
 {
-        int status = 0;
+        int status      = 0;
         char *tmp_xname = format("%s.pm-tmpcpy", xname);
-        assert(tmp_xname);
 
-        printf("[%s] Building...\n", artifact);
+        Info_t(artifact, "Building...");
 
-        printf("[%s] > sh -c '%s'\n", artifact, build);
+        Misc_t(artifact, "$ sh -c '%s'", build);
+
         if (cmd_run(build, bpath)) {
-                fprintf(stderr, "[%s] Error: cmd_run %s: %s\n", artifact, build, strerror(errno));
-                fprintf(stderr, "[%s] Removing corrupted cached file: %s\n", artifact, bname);
                 remove(bname); // if not built succesfully, remove source and
-                               // download it again in next run
-                goto err;
+                               // download it again in the next run
+                goto_err_tx(artifact, err, "cmd_run %s", build);
         }
 
-        printf("[%s] > cp %s %s\n", artifact, artifact_src, xname);
+        Misc_t(artifact, "$ cp %s %s", artifact_src, xname);
+
         if (copy(artifact_src, tmp_xname)) {
-                fprintf(stderr, "[%s] Error: copy %s %s: %s\n", artifact, artifact_src, tmp_xname, strerror(errno));
-                goto err;
+                goto_err_t(artifact, err, "copy %s %s", artifact_src, tmp_xname);
         }
 
         // If the file exists, it's better to copy it somwhere else and then
@@ -271,12 +275,10 @@ build_package(const char *build, const char *artifact, const char *bpath, const 
         // file is busy (running). I don't check if the file exists, I did it
         // always.
         if (rename(tmp_xname, xname)) {
-                fprintf(stderr, "[%s] Error: rename %s %s: %s\n", artifact, tmp_xname, xname, strerror(errno));
-                free(tmp_xname);
-                return 1;
+                goto_err_t(artifact, err, "rename %s %s", tmp_xname, xname);
         }
 
-        printf("[%s] Package built succesfully\n", artifact);
+        Info_t(artifact, "Package built succesfully");
         goto exit;
 err:
         status = 1;
@@ -291,31 +293,34 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
 #undef FIELD
 {
         /* REQUIRED ARGS HAVE TO BE SET */
-        int status = 0;
         char *fname = NULL; // downloaded file name
         char *bpath = NULL; // build path
         char *bname = NULL; // build name: bpath / fname
         char *xpath = NULL; // bin path
         char *xname = NULL; // bin name: xpath / artifact
-        char *artifact_src = NULL;
-        int bfd = -1;
+        char *aname = NULL;
+        int status  = 0;
+        int bfd     = -1;
 
-        if ((fname = name ? strdup(name) : url_get_filename(url)) == NULL) goto err;
-        if ((bpath = format("%s/%s", bdir, fname)) == NULL) goto err;
-        if ((bname = format("%s/%s", bpath, fname)) == NULL) goto err;
-        if ((xpath = format("%s", xdir)) == NULL) goto err;
-        if ((xname = format("%s/%s", xpath, artifact)) == NULL) goto err;
-        if ((artifact_src = format("%s/%s", bpath, artifact)) == NULL) goto err;
+        if ((fname = name ? str_dup(name) : url_get_filename(url)) == NULL) {
+                goto_err_tx(artifact, err, "Can't get name from %s", name ? name : url);
+        }
 
-        if (mkdirp(bpath, 0755)) goto err;
-        if (mkdirp(xpath, 0755)) goto err;
+        bpath = format("%s/%s", bdir, fname);
+        bname = format("%s/%s", bpath, fname);
+        xpath = format("%s", xdir);
+        xname = format("%s/%s", xpath, artifact);
+        aname = format("%s/%s", bpath, artifact);
 
-        if ((bfd = dir_lock_acquire(bpath)) < 0) goto err;
+        if (mkdirp(bpath, 0755)) goto_err(err, "mkdir -p %s", bpath);
+        if (mkdirp(xpath, 0755)) goto_err(err, "mkdir -p %s", xpath);
+
+        if ((bfd = dir_lock_acquire(bpath)) < 0) goto_err_tx(artifact, err, "dir_lock_acquire %s", bpath);
 
         if (!file_exists(bname)) {
-                printf("[%s] File not found. Downloading...\n", artifact);
-                if (download(url, bname)) goto err;
-                printf("[%s] File downloaded successfully\n", artifact);
+                Info_t(artifact, "File not found. Downloading...");
+                if (download(url, bname)) goto_err_tx(artifact, err, "download %s", url);
+                Info_t(artifact, "File downloaded successfully");
                 goto build;
         }
 
@@ -323,17 +328,14 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         time_t t0 = url_file_get_modification_time(url, last_modified_cmd, strlen("last-modified: "));
         time_t t1 = file_get_modification_date(bname);
 
-        if (t0 < 0) {
-                printf("[%s] Can not fetch url date from %s: %s\n", artifact, url, strerror(errno));
-                goto err;
-        }
+        if (t0 < 0) goto_err_tx(artifact, err, "Can't fetch url date from %s", url);
 
         if (t1 < 0 || t0 > t1) {
-                printf("[%s] File is newer. Downloading...\n", artifact);
-                if (download(url, bname)) goto err;
+                Info_t(artifact, "File is newer. Downloading...");
+                if (download(url, bname)) goto_err_tx(artifact, err, "download %s", url);
                 goto build;
         } else {
-                printf("[%s] File is updated.\n", artifact);
+                Info_t(artifact, "File is updated.");
                 if (!file_exists(xname)) {
                         goto build;
                 }
@@ -341,11 +343,10 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         }
 
 build:
-        if (build_package(build, artifact, bpath, artifact_src, xname, bname)) goto err;
+        if (build_package(build, artifact, bpath, aname, xname, bname)) goto err;
         goto exit;
 err:
         status = 1;
-        printf("[%s] Error: Package not installed\n", artifact);
 exit:
         if (bfd >= 0) dir_lock_release(bfd);
         if (fname) free(fname);
@@ -353,7 +354,7 @@ exit:
         if (bname) free(bname);
         if (xpath) free(xpath);
         if (xname) free(xname);
-        if (artifact_src) free(artifact_src);
+        if (aname) free(aname);
         return status;
 }
 
@@ -401,7 +402,7 @@ process_package_wrapper(void *arg)
 #define FIELD(x, ...) t->x,
         process_package(FIELD_LIST t->build_path, t->bin_path);
 #undef FIELD
-        sem_post(sem); // release lock
+        sem_post(max_threads_limit_sem); // release lock
 
 #define FIELD(x, ...)                \
         if (t->x) {                  \
@@ -412,47 +413,60 @@ process_package_wrapper(void *arg)
         return 0;
 }
 
+void
+alarm_handler(int x)
+{
+        static int i       = 0;
+        const char chars[] = { '|', '/', '-', '\\' };
+        assert(x == SIGALRM);
+        printf("%c\033[D", chars[i++ % sizeof chars]);
+        fflush(stdout);
+        alarm(1);
+}
+
 int
 load_config(const char *config_path, int dump_and_exit, int list_and_exit)
 {
         const char *build_path = NULL; // build path (Lua Build.path)
-        const char *bin_path = NULL;   // bin path (Lua Bin.path)
-        Conf conf;
-        int len;
+        const char *bin_path   = NULL; // bin path (Lua Bin.path)
+        Da(Task) tasks         = { 0 };
+        Conf conf              = NULL;
+        Task t;
+        int num_of_packages;
+        int status = 0;
 
         if (Conf_open(&conf, config_path)) {
-                err(EXIT_FAILURE, "Can not open file %s", config_path);
+                goto_err_x(err, "Can not open file %s", config_path);
         }
 
         if (Conf_get_str(conf, &build_path, "System.build.path")) {
-                errx(EXIT_FAILURE, "Error: field `System = { build = { path = \"\" }}` is required. (In %s)", config_path);
+                goto_err_x(err, "field `System = { build = { path = \"\" }}` is required");
         }
 
         if (Conf_get_str(conf, &bin_path, "System.bin.path")) {
-                errx(EXIT_FAILURE, "Error: field `System = { bin = { path = \"\" }}` is required. (In %s)", config_path);
+                goto_err_x(err, "field `System = { bin = { path = \"\" }}` is required");
         }
 
-        if (mkdirp(build_path, 0755)) err(EXIT_FAILURE, "mkdir %s", build_path);
-        if (mkdirp(bin_path, 0755)) err(EXIT_FAILURE, "mkdir %s", bin_path);
+        if (Conf_get_len(conf, &num_of_packages, "Packages")) {
+                goto_err_x(err, "table `Packages = { }` is required");
+        }
 
-        if (Conf_get_len(conf, &len, "Packages")) return 1;
+        if (mkdirp(build_path, 0755)) goto_err_x(err, "mkdir %s", build_path);
+        if (mkdirp(bin_path, 0755)) goto_err_x(err, "mkdir %s", bin_path);
 
         if (dump_and_exit) {
-                printf("Config\n");
-                printf("  Config path: %s\n", config_path);
-                printf("  Build  path: %s\n", build_path);
-                printf("  Binary path: %s\n", bin_path);
-                printf("  Packages: %d\n", len);
-                printf("  Threads: %d\n", threads_number);
+                print_list_head("Config");
+                print_list_entry("Config path: %s", config_path);
+                print_list_entry("Build  path: %s", build_path);
+                print_list_entry("Binary path: %s", bin_path);
+                print_list_entry("Packages: %d", num_of_packages);
+                print_list_entry("Threads: %d", num_of_threads);
                 goto exit;
         }
 
-        Da(Task) tasks = { 0 };
-
-        Task t;
-        for (int i = 1; i <= len; i++) {
+        for (int i = 1; i <= num_of_packages; i++) {
                 t.build_path = build_path;
-                t.bin_path = bin_path;
+                t.bin_path   = bin_path;
 
 /*           */ #define FIELD(x, ...) t.x = NULL;
                 FIELD_LIST;
@@ -460,50 +474,50 @@ load_config(const char *config_path, int dump_and_exit, int list_and_exit)
 
 /*           */ #define FIELD(x, ...)                                          \
         /*   */ if (Conf_get_str(conf, &t.x, "Packages.%d." #x, i) == CONF_OK) \
-                /*   */ t.x = strdup(t.x);
+                /*   */ t.x = str_dup(t.x);
                 FIELD_LIST;
 /*           */ #undef FIELD
 
 /*           */ #define FIELD(x, ...) t.x == NULL &&
-                if (FIELD_LIST 1) {
-                        printf("  Empty. Skipping...\n");
-                        continue;
-                } // all the fields are null - empty package
+                if (FIELD_LIST 1) continue; // all the fields are null - empty package
 /*           */ #undef FIELD
 
                 // allow ignoring artifact for direct downloaded files
-                if (!t.artifact && t.name) t.artifact = strdup(t.name);
+                if (!t.artifact && t.name) t.artifact = str_dup(t.name);
 
 /*           */ #define FIELD(x, req, ...) \
         /*   */ if (t.x == NULL && req)    \
-                /*   */ printf("  Error: required field '" #x "' not set\n");
+                /*   */ print_error_x("required field '" #x "' not set");
                 FIELD_LIST
 /*           */ #undef FIELD
 
 /*           */ #define FIELD(x, req, ...) (t.x || !req) &&
-                if (!(FIELD_LIST 1)) return 1;
+                if (!(FIELD_LIST 1)) goto err;
 /*           */ #undef FIELD
 
                 t.thr = 0;
                 Da_append(&tasks, t);
+                fmt_loffset = Max(fmt_loffset, (int) strlen(t.artifact));
         }
 
         if (list_and_exit) {
-                printf("Packages:\n");
+                print_list_head("Packages");
                 Da_foreach(t, tasks)
                 {
-                        printf("  %s  (%s)\n", t->artifact, t->url);
+                        print_list_entry("%-*.*s %s", fmt_loffset, fmt_loffset, t->artifact, t->url);
                 }
-                return 0;
+                goto exit;
         }
+
+        signal(SIGALRM, alarm_handler);
+        alarm(1); // start alarm for waiting animation
 
         Da_foreach(t, tasks)
         {
-                sem_wait(sem);
+                sem_wait(max_threads_limit_sem);
                 if (pthread_create(&t->thr, NULL, process_package_wrapper, t)) {
-                        perror("pthread_create");
-                        sem_post(sem);
-                        goto err;
+                        sem_post(max_threads_limit_sem);
+                        goto_err(err, "pthread create");
                 }
         }
 
@@ -514,80 +528,99 @@ load_config(const char *config_path, int dump_and_exit, int list_and_exit)
                 }
         }
 
+        alarm(0); // stop alarm for waiting animation
+
         Da_destroy(&tasks);
 
+        goto exit;
 err:
+        status = 1;
 exit:
-        if (Conf_close(conf)) return 1;
-        return 0;
+        Da_destroy(&tasks);
+        if (conf != NULL) status |= Conf_close(conf);
+        return status;
 }
 
 int
 main(int argc, char **argv)
 {
-        const char *init_config;
-        const char *dump_and_exit;
-        const char *list_and_exit;
-        const char *nthreads;
-        const char *home;
-        const char *version;
-        char *file;
+        const char *init_config        = NULL;
+        const char *dump_and_exit      = NULL;
+        const char *list_and_exit      = NULL;
+        const char *num_of_threads_str = NULL;
+        const char *use_colors         = NULL;
+        const char *show_version       = NULL;
+        const char *config_file        = NULL;
+
+        const char *home                = NULL;
+        const char *default_config_file = NULL;
+        int status                      = 0;
+
+        if ((home = getenv("HOME")) == NULL) {
+                goto_err(err, "$HOME is not set");
+        }
+        default_config_file = format("%s/.config/pm/init.lua", home);
 
         flag_program(.help = NULL); // unused. Just to suppress the unused warning
-        flag_add(&version, "--version", "-v", .help = "Show version");
+        flag_add(&show_version, "--version", "-v", .help = "Show version");
         flag_add(&init_config, "i", "init", .help = "Create init.lua");
-        flag_add(&nthreads, "t", "threads", .help = "Use T threads", .nargs = 1);
+        flag_add(&num_of_threads_str, "t", "threads", .help = "Use T threads", .nargs = 1);
         flag_add(&dump_and_exit, "s", "system", .help = "Show system configuration");
         flag_add(&list_and_exit, "l", "list", .help = "List packages in config");
+        flag_add(&config_file, "c", "config", .help = "Change config file", .defaults = default_config_file, .nargs = 1);
+        flag_add(&use_colors, "--color", .help = "Use colors");
 
         if (flag_parse(&argc, &argv) || argc > 1) {
                 flag_show_help(STDOUT_FILENO);
                 exit(1);
         }
 
-        if (version) {
-                printf("pm version v0.2 (%s %s)\n", __DATE__, __TIME__);
-                printf("Copyright (C) 2026 Hugo Coto\n");
-                printf("This is free software: you are free to change and redistribute it.\n");
-                printf("There is NO WARRANTY, to the extent permitted by law.\n");
+        if (show_version) {
+                Info("pm version v0.3 (%s %s)", __DATE__, __TIME__);
+                Info("Copyright (C) 2026 Hugo Coto");
+                Info("This is free software: you are free to change and redistribute it.");
+                Info("There is NO WARRANTY, to the extent permitted by law.");
                 return 0;
         }
 
         curl_global_init(CURL_GLOBAL_ALL);
 
-        threads_number = nthreads ? atoi(nthreads) : nproc();
-        if (threads_number <= 0) {
-                errx(EXIT_FAILURE, "Threads number can not be 0 or less");
+        if (use_colors && isatty(STDOUT_FILENO)) {
+                fmt_colorize = true;
         }
 
-        sem = (sem_t *) malloc(sizeof(sem_t));
-        if (sem_init(sem, 0, threads_number)) {
-                errx(EXIT_FAILURE, "sem_init");
+        num_of_threads = num_of_threads_str ? atoi(num_of_threads_str) : nproc();
+        if (num_of_threads <= 0) {
+                goto_err_x(err, "Threads number can not be 0 or less");
         }
 
-        if (!(home = getenv("HOME"))) {
-                errx(EXIT_FAILURE, "Error: $HOME is not set\n");
+        max_threads_limit_sem = (sem_t *) malloc(sizeof(sem_t));
+        if (sem_init(max_threads_limit_sem, 0, num_of_threads)) {
+                goto_err(err, "sem_init");
         }
-
-        file = format("%s/.config/pm/init.lua", home);
-        assert(file);
 
         if (init_config) {
-                char *cpyfile = strdup(file);
-                assert(cpyfile);
-                char *bn = dirname(cpyfile);
-                mkdirp(bn, 0755);
-                free(cpyfile);
-                dump_config(file);
-                printf("New config file: %s\n", file);
+                char *config_file_copy = str_dup(config_file);
+                char *config_file_path = dirname(config_file_copy);
+                if (mkdirp(config_file_path, 0755)) {
+                        goto_err(err, "can't create path %s", config_file_path);
+                }
+                free(config_file_copy);
+                dump_config(config_file);
+                Info("New config file: %s", config_file);
         }
 
-        if (load_config(file, dump_and_exit != 0, list_and_exit != 0)) {
-                printf("Error loading config file %s\n", file);
+        if (load_config(config_file, dump_and_exit != 0, list_and_exit != 0)) {
+                goto_err_x(err, "loading config file %s", config_file);
         }
-        free(file);
+
+        goto exit;
+err:
+        status = 1;
+exit:
+        free((void *) default_config_file);
         flag_free();
         curl_global_cleanup();
-        sem_destroy(sem);
-        return 0;
+        sem_destroy(max_threads_limit_sem);
+        return status;
 }

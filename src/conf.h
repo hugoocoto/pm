@@ -189,10 +189,10 @@ static int
 conf_traverse(lua_State *L, char *path)
 {
         char *content = strdup(path);
-        char *save = NULL;
-        char *part = strtok_r(content, ".", &save);
-        char *next = strtok_r(NULL, ".", &save);
-        int base = lua_gettop(L);
+        char *save    = NULL;
+        char *part    = strtok_r(content, ".", &save);
+        char *next    = strtok_r(NULL, ".", &save);
+        int base      = lua_gettop(L);
         int ret;
         long idx;
         char *endptr;
@@ -239,7 +239,7 @@ Conf_open(Conf *conf, const char *filename)
         Conf c = (Conf) calloc(1, sizeof(struct __conf));
         if (c == NULL) goto err;
         *conf = c;
-        c->L = luaL_newstate();
+        c->L  = luaL_newstate();
         if (c->L == NULL) goto err;
         if (!c->do_not_load_stdlib) luaL_openlibs(c->L);
         if (luaL_dofile(c->L, filename) != LUA_OK) goto err;

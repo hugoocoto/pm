@@ -19,10 +19,12 @@ know either. Update: appart from the rest, this one works.
 | `pm`                 | Fetch, build, and install all packages from config       |
 | `pm --help` / `pm -h`  | Show help message and exit                               |
 | `pm --version` / `pm -v` | Show version info and exit                             |
-| `pm init` / `pm i`   | Create a template config in `~/.config/pm/init.lua`      |
+| `pm --color`         | Enable colored output                                    |
+| `pm init` / `pm i`   | Create a template config at the `c`/`config` path (default: `~/.config/pm/init.lua`) |
 | `pm threads N` / `pm t N` | Use at most N threads (default: CPU count)          |
 | `pm list` / `pm l`   | List all packages defined in the config                  |
 | `pm system` / `pm s` | Print system configuration paths and settings            |
+| `pm config FILE` / `pm c FILE` | Use a different config file (default: `~/.config/pm/init.lua`) |
 
 ## Configuration
 

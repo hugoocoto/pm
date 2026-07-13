@@ -29,7 +29,7 @@ mkdirp(const char *path, mode_t perms)
         c = p = strdup(path);
         while ((c = strchr(c + 1, '/'))) {
                 *c = 0;
-                s = mkdir(p, perms);
+                s  = mkdir(p, perms);
                 *c = '/';
                 if (s && errno != EEXIST) {
                         free(p);

@@ -54,7 +54,7 @@
         do {                                                                                  \
                 if ((da_ptr)->count >= (da_ptr)->capacity) {                                  \
                         (da_ptr)->capacity = (da_ptr)->capacity ? (da_ptr)->capacity * 2 : 4; \
-                        (da_ptr)->items = (__typeof__((da_ptr)->items)) realloc(                    \
+                        (da_ptr)->items    = (__typeof__((da_ptr)->items)) realloc(           \
                         (da_ptr)->items,                                                      \
                         sizeof(*((da_ptr)->items)) * (da_ptr)->capacity);                     \
                 }                                                                             \
@@ -69,14 +69,14 @@
                         free((da_ptr)->items);                   \
                 }                                                \
                 (da_ptr)->capacity = 0;                          \
-                (da_ptr)->count = 0;                             \
-                (da_ptr)->items = NULL;                          \
+                (da_ptr)->count    = 0;                          \
+                (da_ptr)->items    = NULL;                       \
         } while (0)
 
 /* Insert element E into DA_PTR at index I. */
 #define Da_insert(da_ptr, e, i)                                                   \
         do {                                                                      \
-                Da_append((da_ptr), (__typeof__((e))) { 0 });                         \
+                Da_append((da_ptr), (__typeof__((e))) { 0 });                     \
                 memmove((da_ptr)->items + (i) + 1, (da_ptr)->items + (i),         \
                         ((da_ptr)->count - (i) - 1) * sizeof *((da_ptr)->items)); \
                 (da_ptr)->items[(i)] = (e);                                       \
@@ -108,12 +108,12 @@
              ++(_i_))
 
 /* Duplicate struct and item buffer (element data copied byte-wise). */
-#define Da_dup(da_ptr)                                                                                 \
-        ({                                                                                             \
-                Let cpy = *(da_ptr);                                                                   \
+#define Da_dup(da_ptr)                                                                                     \
+        ({                                                                                                 \
+                Let cpy   = *(da_ptr);                                                                     \
                 cpy.items = (__typeof__(cpy.items)) malloc((da_ptr)->capacity * sizeof(da_ptr)->items[0]); \
-                memcpy(cpy.items, (da_ptr)->items, (da_ptr)->capacity * sizeof(da_ptr)->items[0]);     \
-                cpy;                                                                                   \
+                memcpy(cpy.items, (da_ptr)->items, (da_ptr)->capacity * sizeof(da_ptr)->items[0]);         \
+                cpy;                                                                                       \
         })
 
 /* Stack wrapper over DA (LIFO). */

@@ -1,13 +1,15 @@
-.TH PM 1 "July 2026" "pm v0.2" "User Commands"
+.TH PM 1 "July 2026" "pm v0.3" "User Commands"
 .SH NAME
 pm \- Hugo's own package manager. Simple. Multithread. Written in C.
 .SH SYNOPSIS
 .B pm
 [\fB\-h\fR|\fB\-\-help\fR] [\fB\-v\fR|\fB\-\-version\fR]
+[\fB\-\-color\fR]
 [\fBi\fR|\fBinit\fR]
 [\fBt\fR|\fBthreads\fR \fITHREADS\fR]
 [\fBl\fR|\fBlist\fR]
 [\fBs\fR|\fBsystem\fR]
+[\fBc\fR|\fBconfig\fR \fIFILE\fR]
 .SH DESCRIPTION
 .B pm
 is a package manager that reads a Lua configuration file and
@@ -32,9 +34,15 @@ Show help message and exit.
 \fB\-\-version\fR, \fB\-v\fR
 Display version, copyright, and license information, then exit.
 .TP
+\fB\-\-color\fR
+Enable colored output for log messages. Has no effect when output is
+not a terminal.
+.TP
 \fBi\fR, \fBinit\fR
-Create a template configuration file at
-.IR ~/.config/pm/init.lua
+Create a template configuration file at the
+.B c
+/\fBconfig\fR path (default:
+.IR ~/.config/pm/init.lua )
 and process it. The template includes a bootstrap package that
 reinstalls
 .B pm
@@ -52,6 +60,10 @@ List all packages along with their origin URL. They don't have to be installed.
 \fBs\fR, \fBsystem\fR
 Print the current system configuration: config file path, build cache
 directory, binary directory, package count, and thread count.
+.TP
+\fBc\fR, \fBconfig\fR \fIFILE\fR
+Use an alternate configuration file instead of the default
+.IR ~/.config/pm/init.lua .
 .SH CONFIGURATION
 The configuration file is a Lua script located at
 .IR ~/.config/pm/init.lua .
@@ -67,8 +79,6 @@ A table with a single field:
 .TP
 .B path
 Directory for downloaded sources and build caches.
-Default:
-.IR ~/.local/share/pm/cache/ .
 .RE
 .TP
 .B bin
@@ -77,8 +87,6 @@ A table with a single field:
 .TP
 .B path
 Directory where built executables are installed.
-Default:
-.IR ~/.local/share/pm/bin/ .
 .RE
 .RE
 .TP
