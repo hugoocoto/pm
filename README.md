@@ -59,6 +59,3 @@ make debug    # debug build with sanitizers
 Requires `lua`, `libcurl`, and `libcrypto` (OpenSSL). The Makefile installs the
 man page to `~/.local/share/man/man1/pm.1`.
 
-
-
-:wq (nvim prank)
