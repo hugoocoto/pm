@@ -1,11 +1,14 @@
-SRC = $(wildcard src/*.c)
-HEADERS = $(wildcard src/*.h)
-OUT = pm
 MANDIR ?= $(HOME)/.local/share/man/man1
+
 VERSION := $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null)
 ifeq ($(VERSION),)
 VERSION := v$(shell cat VERSION 2>/dev/null || echo unknown)
 endif
+
+SRC = $(wildcard src/*.c)
+HEADERS = $(wildcard src/*.h)
+OUT = pm
+
 LUA_CFLAGS = $(shell pkg-config --cflags lua 2>/dev/null || pkg-config --cflags lua5.4 2>/dev/null)
 LUA_LIBS = $(shell pkg-config --libs lua 2>/dev/null || pkg-config --libs lua5.4 2>/dev/null || echo '-llua')
 LIBS = $(LUA_LIBS) -lcrypto -lcurl

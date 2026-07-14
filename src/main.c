@@ -251,25 +251,25 @@ url_get_filename(const char *url)
 }
 
 int
-build_package(const char *build, const char *artifact, const char *bpath, const char *artifact_src, const char *xname, const char *bname)
+build_package(const char *build, const char *tag, const char *bpath, const char *aname, const char *xname, const char *bname)
 {
         int status      = 0;
         char *tmp_xname = format("%s.pm-tmpcpy", xname);
 
-        Info_t(artifact, "Building...");
+        Info_t(tag, "Building...");
 
-        Misc_t(artifact, "$ sh -c '%s'", build);
+        Misc_t(tag, "$ sh -c '%s'", build);
 
         if (cmd_run(build, bpath)) {
                 remove(bname); // if not built succesfully, remove source and
                                // download it again in the next run
-                goto_err_tx(artifact, err, "cmd_run %s", build);
+                goto_err_tx(tag, err, "cmd_run %s", build);
         }
 
-        Misc_t(artifact, "$ cp %s %s", artifact_src, xname);
+        Misc_t(tag, "$ cp %s %s", aname, xname);
 
-        if (copy(artifact_src, tmp_xname)) {
-                goto_err_t(artifact, err, "copy %s %s", artifact_src, tmp_xname);
+        if (copy(aname, tmp_xname)) {
+                goto_err_t(tag, err, "copy %s %s", aname, tmp_xname);
         }
 
         // If the file exists, it's better to copy it somwhere else and then
@@ -279,10 +279,10 @@ build_package(const char *build, const char *artifact, const char *bpath, const 
         // file is busy (running). I don't check if the file exists, I did it
         // always.
         if (rename(tmp_xname, xname)) {
-                goto_err_t(artifact, err, "rename %s %s", tmp_xname, xname);
+                goto_err_t(tag, err, "rename %s %s", tmp_xname, xname);
         }
 
-        Info_t(artifact, "Package built succesfully");
+        Info_t(tag, "Package built succesfully");
         goto exit;
 err:
         status = 1;
@@ -301,30 +301,34 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         char *bpath = NULL; // build path
         char *bname = NULL; // build name: bpath / fname
         char *xpath = NULL; // bin path
-        char *xname = NULL; // bin name: xpath / artifact
-        char *aname = NULL;
-        int status  = 0;
-        int bfd     = -1;
+        char *xname = NULL; // bin name: xpath / abase
+        char *aname = NULL; // artifact full path
+
+        char *artifact_dup = str_dup(artifact);
+        char *abase        = basename(artifact_dup);
+
+        int status = 0;
+        int bfd    = -1;
 
         if ((fname = name ? str_dup(name) : url_get_filename(url)) == NULL) {
-                goto_err_tx(artifact, err, "Can't get name from %s", name ? name : url);
+                goto_err_tx(abase, err, "Can't get name from %s", name ? name : url);
         }
 
         bpath = format("%s/%s", bdir, fname);
         bname = format("%s/%s", bpath, fname);
         xpath = format("%s", xdir);
-        xname = format("%s/%s", xpath, artifact);
+        xname = format("%s/%s", xpath, abase);
         aname = format("%s/%s", bpath, artifact);
 
         if (mkdirp(bpath, 0755)) goto_err(err, "mkdir -p %s", bpath);
         if (mkdirp(xpath, 0755)) goto_err(err, "mkdir -p %s", xpath);
 
-        if ((bfd = dir_lock_acquire(bpath)) < 0) goto_err_tx(artifact, err, "dir_lock_acquire %s", bpath);
+        if ((bfd = dir_lock_acquire(bpath)) < 0) goto_err_tx(abase, err, "dir_lock_acquire %s", bpath);
 
         if (!file_exists(bname)) {
-                Info_t(artifact, "File not found. Downloading...");
-                if (download(url, bname)) goto_err_tx(artifact, err, "download %s", url);
-                Info_t(artifact, "File downloaded successfully");
+                Info_t(abase, "File not found. Downloading...");
+                if (download(url, bname)) goto_err_tx(abase, err, "download %s", url);
+                Info_t(abase, "File downloaded successfully");
                 goto build;
         }
 
@@ -332,14 +336,14 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         time_t t0 = url_file_get_modification_time(url, last_modified_cmd, strlen("last-modified: "));
         time_t t1 = file_get_modification_date(bname);
 
-        if (t0 < 0) goto_err_tx(artifact, err, "Can't fetch url date from %s", url);
+        if (t0 < 0) goto_err_tx(abase, err, "Can't fetch url date from %s", url);
 
         if (t1 < 0 || t0 > t1) {
-                Info_t(artifact, "File is newer. Downloading...");
-                if (download(url, bname)) goto_err_tx(artifact, err, "download %s", url);
+                Info_t(abase, "File is newer. Downloading...");
+                if (download(url, bname)) goto_err_tx(abase, err, "download %s", url);
                 goto build;
         } else {
-                Info_t(artifact, "File is updated.");
+                Info_t(abase, "File is updated.");
                 if (!file_exists(xname)) {
                         goto build;
                 }
@@ -347,7 +351,7 @@ process_package(FIELD_LIST const char *bdir, const char *xdir)
         }
 
 build:
-        if (build_package(build, artifact, bpath, aname, xname, bname)) goto err;
+        if (build_package(build, abase, bpath, aname, xname, bname)) goto err;
         goto exit;
 err:
         status = 1;
@@ -501,7 +505,10 @@ load_config(const char *config_path, int dump_and_exit, int list_and_exit)
 
                 t.thr = 0;
                 Da_append(&tasks, t);
-                fmt_loffset = Max(fmt_loffset, (int) strlen(t.artifact));
+
+                const char *c;
+                if ((c = strrchr(t.artifact, '/')) == NULL) c = t.artifact;
+                fmt_loffset = Max(fmt_loffset, (int) strlen(c));
         }
 
         if (list_and_exit) {
@@ -580,8 +587,8 @@ main(int argc, char **argv)
         }
 
         if (show_version) {
-		// NOTE: changing this format will break version parsing in .github/workflows/nightly.yml
-		Info("pm version %s (%s %s)", VERSION, __DATE__, __TIME__);
+                // NOTE: changing this format will break version parsing in .github/workflows/nightly.yml
+                Info("pm version %s (%s %s)", VERSION, __DATE__, __TIME__);
                 Info("Copyright (C) 2026 Hugo Coto");
                 Info("This is free software: you are free to change and redistribute it.");
                 Info("There is NO WARRANTY, to the extent permitted by law.");

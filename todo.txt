@@ -1,0 +1,1 @@
+if I go to ~/.config and call `pm` I get a segfault
