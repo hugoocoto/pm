@@ -432,6 +432,36 @@ alarm_handler(int x)
         alarm(1);
 }
 
+bool
+is_path_on_PATH(const char *bin_path)
+{
+        char *save_ptr;
+        char *path;
+        char *PATH;
+        bool ret = false;
+
+        // assert that the bin_path does not end with '/'
+        assert(bin_path[strlen(bin_path) - 1] != '/');
+
+        if ((PATH = getenv("PATH")) == NULL ||
+            (PATH = strdup(PATH)) == NULL) {
+                goto exit;
+        }
+
+        if ((path = strtok_r(PATH, ":", &save_ptr)) == NULL) goto exit;
+
+        do {
+                if (strcmp(bin_path, path) == 0) {
+                        ret = true;
+                        goto exit;
+                }
+        } while ((path = strtok_r(NULL, ":", &save_ptr)));
+
+exit:
+        if (PATH) free(PATH);
+        return ret;
+}
+
 int
 load_config(const char *config_path, int dump_and_exit, int list_and_exit)
 {
@@ -442,6 +472,7 @@ load_config(const char *config_path, int dump_and_exit, int list_and_exit)
         Task t;
         int num_of_packages;
         int status = 0;
+        char *c;
 
         if (Conf_open(&conf, config_path)) {
                 goto_err_x(err, "Can not open file %s", config_path);
@@ -455,12 +486,22 @@ load_config(const char *config_path, int dump_and_exit, int list_and_exit)
                 goto_err_x(err, "field `System = { bin = { path = \"\" }}` is required");
         }
 
+        // trim `/` at the end
+        if ((c = strrchr((char *) bin_path, '/')) && c[1] == 0) *c = 0;
+        if ((c = strrchr((char *) build_path, '/')) && c[1] == 0) *c = 0;
+
         if (Conf_get_len(conf, &num_of_packages, "Packages")) {
                 goto_err_x(err, "table `Packages = { }` is required");
         }
 
         if (mkdirp(build_path, 0755)) goto_err_x(err, "mkdir %s", build_path);
         if (mkdirp(bin_path, 0755)) goto_err_x(err, "mkdir %s", bin_path);
+
+        if (!is_path_on_PATH(bin_path)) {
+                print_error_x("Binary path (%s) is not in the path", bin_path);
+                print_list_head("Add this to the shell's config");
+                print_list_entry("export PATH=\"$PATH:%s\"", bin_path);
+        }
 
         if (dump_and_exit) {
                 print_list_head("Config");
