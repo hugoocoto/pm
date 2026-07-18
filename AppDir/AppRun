@@ -1,1 +1,6 @@
-usr/bin/pm
+#!/bin/bash
+APPDIR="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="$APPDIR/usr/lib:$LD_LIBRARY_PATH"
+export LUA_PATH="$APPDIR/usr/share/lua/5.4/?.lua;$APPDIR/usr/share/lua/5.4/?/init.lua;;"
+export LUA_CPATH="$APPDIR/usr/lib/x86_64-linux-gnu/lua/5.4/?.so;;"
+exec "$APPDIR/usr/bin/pm" "$@"
