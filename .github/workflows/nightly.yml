@@ -7,7 +7,7 @@ on:
 
 jobs:
   nightly:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
@@ -29,7 +29,12 @@ jobs:
           chmod +x linuxdeploy-${ARCH}.AppImage
           ./linuxdeploy-${ARCH}.AppImage --appimage-extract
           mv squashfs-root linuxdeploy
-          ARCH=${ARCH} ./linuxdeploy/AppRun --appdir AppDir
+          cp AppDir/AppRun AppDir/AppRun.custom
+          ARCH=${ARCH} ./linuxdeploy/AppRun --appdir AppDir \
+            --library /usr/lib/x86_64-linux-gnu/libcurl.so.4 \
+            --library /usr/lib/x86_64-linux-gnu/libssl.so.3 \
+            --library /usr/lib/x86_64-linux-gnu/libcrypto.so.3
+          cp AppDir/AppRun.custom AppDir/AppRun
           # Build and install luasec/luasocket for lua5.4 into a local tree,
           # then bundle them into the AppDir (dynamically loaded, invisible to ldd)
           luarocks --lua-version 5.4 --tree /tmp/luarocks install luasocket
