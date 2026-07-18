@@ -31,7 +31,7 @@ jobs:
           mv squashfs-root linuxdeploy
           ARCH=${ARCH} ./linuxdeploy/AppRun --appdir AppDir
           # bundle lua-sec and lua-socket (dynamically loaded by Lua, invisible to ldd)
-          cp -a /usr/share/lua/5.4 AppDir/usr/lib/x86_64-linux-gnu/
+          cp -a /usr/share/lua/5.4 AppDir/usr/share/lua/
           cp -a /usr/lib/x86_64-linux-gnu/lua/5.4 AppDir/usr/lib/x86_64-linux-gnu/lua/
           cp -a /usr/lib/x86_64-linux-gnu/liblua5.4-{sec,socket,mime}* AppDir/usr/lib/
           chmod +x AppDir/AppRun

@@ -1,2 +1,5 @@
 /pm
 update_example.sh
+AppDir/usr/share/lua/
+AppDir/usr/lib/x86_64-linux-gnu/lua/
+AppDir/usr/lib/liblua5.4-*
