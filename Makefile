@@ -22,6 +22,7 @@ RELEASE_FLAGS = -O2 -Wall -Wextra
 all: release $(MANDIR)/pm.1
 
 release: FLAGS = $(BASE_FLAGS) $(RELEASE_FLAGS)
+release: clean
 release: $(OUT)
 
 debug: FLAGS = $(BASE_FLAGS) $(DEBUG_FLAGS)
