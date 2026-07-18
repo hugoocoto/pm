@@ -242,7 +242,11 @@ Conf_open(Conf *conf, const char *filename)
         c->L  = luaL_newstate();
         if (c->L == NULL) goto err;
         if (!c->do_not_load_stdlib) luaL_openlibs(c->L);
-        if (luaL_dofile(c->L, filename) != LUA_OK) goto err;
+        if (luaL_dofile(c->L, filename) != LUA_OK) {
+                fprintf(stderr, "conf: %s\n", lua_tostring(c->L, -1));
+                lua_pop(c->L, 1);
+                goto err;
+        }
         /* if the chunk returned a table, lift its entries to globals */
         if (lua_gettop(c->L) >= 1 && lua_istable(c->L, -1)) {
                 lua_pushnil(c->L);
