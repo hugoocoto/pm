@@ -16,7 +16,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y liblua5.4-dev libcurl4-openssl-dev libssl-dev lua5.4 luarocks
+        run: sudo apt-get update && sudo apt-get install -y liblua5.4-dev libcurl4-openssl-dev libssl-dev lua5.4 luarocks patchelf
 
       - name: Build
         run: make release
@@ -42,6 +42,11 @@ jobs:
           mkdir -p AppDir/usr/share/lua/5.4 AppDir/usr/lib/x86_64-linux-gnu/lua/5.4
           cp -a /tmp/luarocks/share/lua/5.4/. AppDir/usr/share/lua/5.4/
           cp -a /tmp/luarocks/lib/lua/5.4/. AppDir/usr/lib/x86_64-linux-gnu/lua/5.4/
+          # Embed RPATH into pm and lua C modules so they find bundled libs
+          # without LD_LIBRARY_PATH (which would leak into child processes like curl)
+          patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/pm
+          find AppDir/usr/lib/x86_64-linux-gnu/lua -name '*.so' \
+            -exec patchelf --set-rpath '$ORIGIN/../../..' {} \;
           chmod +x AppDir/AppRun
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${ARCH}.AppImage
           chmod +x appimagetool-${ARCH}.AppImage
