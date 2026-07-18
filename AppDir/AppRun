@@ -1,6 +1,19 @@
 #!/bin/bash
 APPDIR="$(dirname "$(readlink -f "$0")")"
 export LD_LIBRARY_PATH="$APPDIR/usr/lib:$LD_LIBRARY_PATH"
-export LUA_PATH="$APPDIR/usr/share/lua/5.4/?.lua;$APPDIR/usr/share/lua/5.4/?/init.lua;;"
-export LUA_CPATH="$APPDIR/usr/lib/x86_64-linux-gnu/lua/5.4/?.so;;"
+
+# Build LUA_PATH and LUA_CPATH from whatever lua version dirs exist in the AppImage
+LUA_PATH_EXTRA=""
+LUA_CPATH_EXTRA=""
+for d in "$APPDIR/usr/share/lua/"/*/; do
+    [ -d "$d" ] || continue
+    LUA_PATH_EXTRA="$d?.lua;$d?/init.lua;$LUA_PATH_EXTRA"
+done
+for d in "$APPDIR/usr/lib/x86_64-linux-gnu/lua/"/*/; do
+    [ -d "$d" ] || continue
+    LUA_CPATH_EXTRA="$d?.so;$LUA_CPATH_EXTRA"
+done
+export LUA_PATH="$LUA_PATH_EXTRA;"
+export LUA_CPATH="$LUA_CPATH_EXTRA;"
+
 exec "$APPDIR/usr/bin/pm" "$@"
